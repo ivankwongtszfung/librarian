@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Librarian</title>
+<style>
+  :root {
+    --bg: #F7F8F5; --surface: #FFFFFF; --ink: #1B231E; --muted: #5C665F;
+    --line: #DDE2DB; --green: #1B7A4A; --green-ink: #14603A; --green-soft: #E7F1E9;
+    --red: #BC4438; --red-soft: #F7EAE8; --amber: #A87614; --amber-soft: #F5EEDC;
+    --code-bg: #EEF1EC;
+    --sans: "Avenir Next", Avenir, "Helvetica Neue", system-ui, sans-serif;
+    --serif: Charter, "Bitstream Charter", Cambria, Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11160F; --surface: #181F16; --ink: #E4EAE2; --muted: #93A093;
+      --line: #2A342A; --green: #4CBE7E; --green-ink: #6FD79C; --green-soft: #1A2B1F;
+      --red: #E07A6C; --red-soft: #2E1D1A; --amber: #D9AE55; --amber-soft: #2B2415;
+      --code-bg: #212A1F;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--serif); line-height: 1.6;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+    padding: 0.9rem 1.25rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+  }
+  .brand {
+    font-family: var(--sans); font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em;
+    display: flex; align-items: center; gap: 0.5rem; cursor: pointer;
+  }
+  .brand span { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+  input[type=search] {
+    flex: 1; min-width: 180px; padding: 0.45rem 0.7rem;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: var(--surface); color: var(--ink); font: inherit; font-size: 0.9rem;
+  }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+  .filters { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .filters button {
+    font-family: var(--mono); font-size: 0.72rem; padding: 0.3rem 0.65rem;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--surface); color: var(--muted); cursor: pointer;
+  }
+  .filters button.on { border-color: var(--green); color: var(--green-ink); background: var(--green-soft); }
+  main { max-width: 62rem; margin: 0 auto; padding: 1.5rem 1.25rem 5rem; }
+
+  .card {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--line); border-radius: 8px;
+    padding: 0.85rem 1rem; margin-bottom: 0.7rem;
+  }
+  .card:hover { border-color: var(--muted); }
+  .card.pending { border-left-color: var(--amber); }
+  .card.approved { border-left-color: var(--green); }
+  .card.rejected { border-left-color: var(--red); }
+  .card.changes_requested { border-left-color: var(--amber); }
+  .card h3 { font-family: var(--sans); font-size: 1rem; margin: 0 0 0.3rem; }
+  .meta { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center;
+          font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+  .chip { padding: 0.15rem 0.5rem; border-radius: 999px; border: 1px solid var(--line); }
+  .chip.pending { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+  .chip.approved { color: var(--green-ink); border-color: var(--green); background: var(--green-soft); }
+  .chip.rejected { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+  .chip.changes_requested { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+  .reason { margin-top: 0.4rem; font-size: 0.88rem; color: var(--red); }
+  .section-title {
+    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin: 1.5rem 0 0.7rem;
+  }
+  .section-title:first-child { margin-top: 0; }
+  .empty { color: var(--muted); font-style: italic; padding: 2rem 0; }
+
+  /* detail */
+  .doc { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1.5rem; }
+  .doc pre { background: var(--code-bg); padding: 0.9rem; border-radius: 6px; overflow-x: auto; font-size: 0.82rem; }
+  .doc code { font-family: var(--mono); font-size: 0.85em; background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 4px; }
+  .doc pre code { background: none; padding: 0; }
+  .doc h1, .doc h2, .doc h3 { font-family: var(--sans); line-height: 1.25; }
+  .doc h1 { font-size: 1.5rem; } .doc h2 { font-size: 1.2rem; margin-top: 1.6rem; }
+  .doc > *:first-child { margin-top: 0; }
+  .doc table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 0.4rem 0.6rem; text-align: left; }
+  .banner {
+    border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1rem;
+    font-family: var(--sans); font-size: 0.92rem;
+  }
+  .banner.approved { background: var(--green-soft); border: 1px solid var(--green); color: var(--green-ink); }
+  .banner.rejected { background: var(--red-soft); border: 1px solid var(--red); color: var(--red); }
+  .banner.pending, .banner.changes_requested { background: var(--amber-soft); border: 1px solid var(--amber); color: var(--amber); }
+  .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1.25rem 0; }
+  .actions button {
+    font-family: var(--sans); font-weight: 600; font-size: 0.9rem;
+    padding: 0.55rem 1.1rem; border-radius: 8px; cursor: pointer; border: 1px solid;
+  }
+  .approve { background: var(--green); border-color: var(--green); color: #fff; }
+  .reject { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+  .comment-btn { background: var(--surface); border-color: var(--line); color: var(--ink); }
+  textarea {
+    width: 100%; min-height: 5rem; padding: 0.6rem; font: inherit; font-size: 0.9rem;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink);
+  }
+  .thread { margin-top: 1.5rem; }
+  .comment { background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+             padding: 0.7rem 0.9rem; margin-bottom: 0.6rem; font-size: 0.92rem; }
+  .comment .who { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-bottom: 0.25rem; }
+  .comment blockquote { margin: 0 0 0.4rem; padding-left: 0.7rem; border-left: 2px solid var(--green);
+                        color: var(--muted); font-size: 0.86rem; }
+  .versions { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
+  .versions button { font-family: var(--mono); font-size: 0.75rem; padding: 0.25rem 0.6rem;
+                     border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+                     color: var(--muted); cursor: pointer; }
+  .versions button.on { border-color: var(--green); color: var(--green-ink); background: var(--green-soft); }
+  .diff { font-family: var(--mono); font-size: 0.78rem; white-space: pre; overflow-x: auto;
+          background: var(--code-bg); border-radius: 8px; padding: 0.9rem; }
+  .diff .add { color: var(--green-ink); }
+  .diff .del { color: var(--red); }
+  .diff .hunk { color: var(--muted); }
+  a.back { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand" onclick="route('/')">📚 Librarian <span>decision library</span></div>
+  <input type="search" id="q" placeholder="Search every decision — including the rejected ones…">
+  <div class="filters" id="filters"></div>
+</header>
+<main id="app"><p class="empty">Loading…</p></main>
+
+<script type="module">
+const app = document.getElementById('app');
+const qBox = document.getElementById('q');
+const STATUSES = ['all', 'pending', 'approved', 'rejected'];
+let filter = 'all';
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// A deliberately small markdown renderer: enough for decision docs, no dependency.
+function md(src) {
+  const blocks = [];
+  let text = esc(src).replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
+    blocks.push(`<pre><code>${code}</code></pre>`);
+    return ` ${blocks.length - 1} `;
+  });
+
+  text = text
+    .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+    .replace(/^&gt; (.*)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<![*\w])\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    .replace(/^[-*] (.*)$/gm, '<li>$1</li>')
+    .replace(/^\d+\. (.*)$/gm, '<li>$1</li>');
+
+  text = text.replace(/(<li>[\s\S]*?<\/li>)(?=\n{2,}|$)/g, '<ul>$1</ul>');
+  text = text
+    .split(/\n{2,}/)
+    .map((p) => (/^\s*<(h\d|ul|pre|blockquote|table)/.test(p.trim()) || /^ \d+ $/.test(p.trim()) ? p : `<p>${p.replace(/\n/g, '<br>')}</p>`))
+    .join('\n');
+
+  return text.replace(/ (\d+) /g, (_m, i) => blocks[Number(i)]);
+}
+
+function statusChip(s) { return `<span class="chip ${s}">${s.replace('_', ' ')}</span>`; }
+const when = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+async function api(path, opts) {
+  const res = await fetch(`/api${path}`, {
+    headers: { 'content-type': 'application/json' },
+    ...opts,
+    body: opts?.body ? JSON.stringify(opts.body) : undefined,
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+function card(d) {
+  return `<a class="card ${d.status}" href="/d/${d.id}" onclick="event.preventDefault(); route('/d/${d.id}')">
+    <h3>${esc(d.title)}</h3>
+    <div class="meta">
+      ${statusChip(d.status)}
+      <span class="chip">${esc(d.kind)}</span>
+      <span>${esc(d.projectName ?? '')}</span>
+      <span>· ${when(d.createdAt)}</span>
+      ${d.versionCount > 1 ? `<span>· v${d.versionCount}</span>` : ''}
+      ${d.source === 'watcher' ? '<span>· auto-captured</span>' : ''}
+    </div>
+    ${d.reason ? `<div class="reason">✕ ${esc(d.reason)}</div>` : ''}
+  </a>`;
+}
+
+async function renderLibrary() {
+  const q = qBox.value.trim();
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (filter !== 'all') params.set('status', filter);
+  const { body } = await api(`/decisions?${params}`);
+  const decisions = body.decisions ?? [];
+
+  document.getElementById('filters').innerHTML = STATUSES
+    .map((s) => `<button class="${s === filter ? 'on' : ''}" onclick="setFilter('${s}')">${s}</button>`)
+    .join('');
+
+  if (!decisions.length) {
+    app.innerHTML = `<p class="empty">${q ? 'Nothing matches that.' : 'No decisions yet. Point an agent at the MCP endpoint and submit one.'}</p>`;
+    return;
+  }
+
+  const needsYou = decisions.filter((d) => d.status === 'pending' || d.status === 'changes_requested');
+  const rest = decisions.filter((d) => !needsYou.includes(d));
+
+  app.innerHTML =
+    (needsYou.length && !q ? `<div class="section-title">Needs you — ${needsYou.length}</div>${needsYou.map(card).join('')}` : '') +
+    (rest.length ? `<div class="section-title">${q ? 'Results' : 'Library'}</div>${rest.map(card).join('')}` : '') +
+    (q && needsYou.length ? needsYou.map(card).join('') : '');
+}
+
+async function renderDecision(id) {
+  const { body: d, status } = await api(`/decisions/${id}`);
+  if (status !== 200) { app.innerHTML = '<p class="empty">Not found.</p>'; return; }
+
+  const latest = d.versions[d.versions.length - 1];
+  const pending = d.status === 'pending' || d.status === 'changes_requested';
+  const lastReason = [...d.verdicts].reverse().find((v) => v.reason)?.reason;
+
+  const banner = pending
+    ? `<div class="banner ${d.status}">Awaiting your verdict — read it, then decide.</div>`
+    : `<div class="banner ${d.status}">${d.status === 'approved' ? '✓ Approved' : d.status === 'rejected' ? '✕ Rejected' : d.status}${lastReason ? ` — ${esc(lastReason)}` : ''}</div>`;
+
+  const versionTabs = d.versions.length > 1
+    ? `<div class="versions">
+        ${d.versions.map((v) => `<button class="${v.num === latest.num ? 'on' : ''}" onclick="showVersion('${id}', ${v.num})">v${v.num}</button>`).join('')}
+        <button onclick="showDiff('${id}', ${d.versions.length - 1}, ${d.versions.length})">diff v${d.versions.length - 1}→v${d.versions.length}</button>
+      </div>`
+    : '';
+
+  app.innerHTML = `
+    <a class="back" href="/" onclick="event.preventDefault(); route('/')">← library</a>
+    <h1 style="font-family: var(--sans); margin: 0.6rem 0 0.3rem;">${esc(d.title)}</h1>
+    <div class="meta" style="margin-bottom: 1rem;">
+      ${statusChip(d.status)}<span class="chip">${esc(d.kind)}</span>
+      <span>${esc(d.projectName)}</span><span>· ${when(d.createdAt)}</span>
+      ${d.provenance?.map((p) => `<span>· via ${esc(p.source)}</span>`).join('') ?? ''}
+    </div>
+    ${banner}
+    ${versionTabs}
+    <div class="doc" id="doc">${md(latest.bodyMd)}</div>
+    ${pending ? `
+      <div class="actions">
+        <button class="approve" onclick="verdict('${id}', 'approved')">Approve</button>
+        <button class="reject" onclick="verdict('${id}', 'rejected')">Reject with reason</button>
+        <button class="comment-btn" onclick="toggleComment()">Comment</button>
+      </div>
+      <div id="composer" hidden>
+        <textarea id="cbody" placeholder="Select a passage above first to quote it, or just type…"></textarea>
+        <div class="actions">
+          <button class="comment-btn" onclick="submitComments('${id}')">Submit review — request changes</button>
+        </div>
+      </div>` : ''}
+    ${d.thread?.length ? `<div class="thread"><div class="section-title">Thread — the rationale</div>${d.thread.map((c) => `
+      <div class="comment">
+        <div class="who">${esc(c.author)} · ${when(c.createdAt)}</div>
+        ${c.anchorQuote ? `<blockquote>${esc(c.anchorQuote)}</blockquote>` : ''}
+        <div>${esc(c.body)}</div>
+      </div>`).join('')}</div>` : ''}
+  `;
+}
+
+window.showVersion = async (id, num) => {
+  const { body: d } = await api(`/decisions/${id}`);
+  const v = d.versions.find((x) => x.num === num);
+  document.getElementById('doc').innerHTML = md(v.bodyMd);
+  document.querySelectorAll('.versions button').forEach((b, i) => b.classList.toggle('on', i === num - 1));
+};
+
+window.showDiff = async (id, from, to) => {
+  const { body } = await api(`/decisions/${id}/diff?from=${from}&to=${to}`);
+  const html = (body.diff || 'No changes.')
+    .split('\n')
+    .map((l) => {
+      const cls = l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : l.startsWith('@@') ? 'hunk' : '';
+      return `<span class="${cls}">${esc(l)}</span>`;
+    })
+    .join('\n');
+  document.getElementById('doc').innerHTML = `<div class="diff">${html}</div>`;
+};
+
+window.verdict = async (id, to) => {
+  let reason = null;
+  if (to === 'rejected') {
+    // A red light without a reason is not a decision — the API refuses it too.
+    reason = prompt('Why is this rejected? The reason is the decision.');
+    if (!reason?.trim()) return;
+  }
+  const res = await api(`/decisions/${id}/verdict`, { method: 'POST', body: { to, reason } });
+  if (res.status !== 200) { alert(res.body.detail ?? 'Could not record that verdict.'); return; }
+  renderDecision(id);
+};
+
+window.toggleComment = () => {
+  const c = document.getElementById('composer');
+  c.hidden = !c.hidden;
+  if (!c.hidden) document.getElementById('cbody').focus();
+};
+
+window.submitComments = async (id) => {
+  const body = document.getElementById('cbody').value.trim();
+  if (!body) return;
+  const quote = String(window.getSelection?.() ?? '').trim() || null;
+  const res = await api(`/decisions/${id}/comments`, {
+    method: 'POST',
+    body: { comments: [{ body, anchor_quote: quote }], request_changes: true, reason: body.slice(0, 120) },
+  });
+  if (res.status !== 200) { alert(res.body.detail ?? 'Could not save that.'); return; }
+  renderDecision(id);
+};
+
+window.setFilter = (s) => { filter = s; renderLibrary(); };
+
+window.route = (path) => {
+  history.pushState({}, '', path);
+  render();
+};
+
+function render() {
+  const m = /^\/d\/(.+)$/.exec(location.pathname);
+  if (m) renderDecision(m[1]);
+  else renderLibrary();
+}
+
+qBox.addEventListener('input', () => { if (!location.pathname.startsWith('/d/')) renderLibrary(); });
+window.addEventListener('popstate', render);
+
+// Live updates: a decision submitted by an agent appears without a refresh.
+new EventSource('/api/events').addEventListener('message', () => {
+  if (!location.pathname.startsWith('/d/')) renderLibrary();
+});
+
+render();
+</script>
+</body>
+</html>

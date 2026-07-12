@@ -1,0 +1,741 @@
+import { assertTransition } from '../domain/state-machine.js';
+import type {
+  Comment,
+  Decision,
+  DecisionDetail,
+  DecisionKind,
+  DecisionStatus,
+  Participant,
+  ParticipantType,
+  Project,
+  ReviewOutcome,
+  SearchFilters,
+  SearchHit,
+  Session,
+  Source,
+  VerdictEvent,
+  Version,
+} from '../domain/types.js';
+import { contentHash, newId, now } from '../util/ids.js';
+import type { Db } from './db.js';
+
+interface DecisionRow {
+  id: string;
+  project_id: string;
+  session_id: string | null;
+  kind: DecisionKind;
+  title: string;
+  status: DecisionStatus;
+  source: Source;
+  content_hash: string;
+  pinned_commit: string | null;
+  created_at: number;
+  decided_at: number | null;
+}
+
+export interface SubmitInput {
+  project: string;
+  title: string;
+  body: string;
+  kind: DecisionKind;
+  source: Source;
+  agent?: string;
+  sessionRef?: string;
+  parentDecisionId?: string;
+  contextRefs?: string[];
+  pinnedCommit?: string;
+  /** record_decision stores an already-settled entry; submit_for_review gates. */
+  initialStatus?: DecisionStatus;
+}
+
+export interface SubmitResult {
+  decision: Decision;
+  version: Version;
+  /** True when an existing decision with the same content was found and merged. */
+  deduped: boolean;
+}
+
+export class Repository {
+  constructor(private readonly db: Db) {}
+
+  // ---------- projects, sessions, participants ----------
+
+  upsertProject(name: string, rootPath?: string): Project {
+    const existing = this.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as
+      | { id: string; name: string; root_path: string | null; created_at: number }
+      | undefined;
+    if (existing) {
+      if (rootPath && !existing.root_path) {
+        this.db
+          .prepare('UPDATE projects SET root_path = ? WHERE id = ?')
+          .run(rootPath, existing.id);
+      }
+      return {
+        id: existing.id,
+        name: existing.name,
+        rootPath: rootPath ?? existing.root_path,
+        createdAt: existing.created_at,
+      };
+    }
+    const project: Project = {
+      id: newId('prj'),
+      name,
+      rootPath: rootPath ?? null,
+      createdAt: now(),
+    };
+    this.db
+      .prepare('INSERT INTO projects (id, name, root_path, created_at) VALUES (?, ?, ?, ?)')
+      .run(project.id, project.name, project.rootPath, project.createdAt);
+    return project;
+  }
+
+  upsertSession(projectId: string, agent: string | null, externalRef: string | null): Session {
+    if (externalRef) {
+      const existing = this.db
+        .prepare('SELECT * FROM sessions WHERE external_ref = ?')
+        .get(externalRef) as
+        | {
+            id: string;
+            project_id: string;
+            agent: string | null;
+            external_ref: string;
+            started_at: number;
+          }
+        | undefined;
+      if (existing) {
+        return {
+          id: existing.id,
+          projectId: existing.project_id,
+          agent: existing.agent,
+          externalRef: existing.external_ref,
+          startedAt: existing.started_at,
+        };
+      }
+    }
+    const session: Session = {
+      id: newId('ses'),
+      projectId,
+      agent,
+      externalRef,
+      startedAt: now(),
+    };
+    this.db
+      .prepare(
+        'INSERT INTO sessions (id, project_id, agent, external_ref, started_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(session.id, session.projectId, session.agent, session.externalRef, session.startedAt);
+    return session;
+  }
+
+  upsertParticipant(type: ParticipantType, name: string): Participant {
+    const existing = this.db
+      .prepare('SELECT * FROM participants WHERE type = ? AND name = ?')
+      .get(type, name) as Participant | undefined;
+    if (existing) return existing;
+    const participant: Participant = { id: newId('par'), type, name };
+    this.db
+      .prepare('INSERT INTO participants (id, type, name) VALUES (?, ?, ?)')
+      .run(participant.id, participant.type, participant.name);
+    return participant;
+  }
+
+  // ---------- submission ----------
+
+  /**
+   * Creates a decision, or merges into an existing one when the same content
+   * arrives twice (an agent submitted it and the watcher later observed the
+   * same plan in a transcript). Both origins are kept: provenance is additive.
+   */
+  submit(input: SubmitInput): SubmitResult {
+    const hash = contentHash(input.project, input.title, input.body);
+    const tx = this.db.transaction((): SubmitResult => {
+      const project = this.upsertProject(input.project);
+      const session = input.sessionRef
+        ? this.upsertSession(project.id, input.agent ?? null, input.sessionRef)
+        : null;
+
+      const existing = this.db
+        .prepare('SELECT * FROM decisions WHERE content_hash = ?')
+        .get(hash) as DecisionRow | undefined;
+
+      if (existing) {
+        this.recordProvenance(existing.id, input.source, input.sessionRef ?? null);
+        const version = this.latestVersion(existing.id)!;
+        return { decision: this.rowToDecision(existing), version, deduped: true };
+      }
+
+      // A revision is a new version of the same decision, not a new decision:
+      // the thread — doc, comments, verdicts, and the red light that prompted
+      // the rewrite — is the unit of review, and it has to stay whole.
+      if (input.parentDecisionId) {
+        const parent = this.getDecision(input.parentDecisionId);
+        if (parent) {
+          const parentVersion = this.latestVersion(parent.id);
+          const version = this.addVersion(
+            parent.id,
+            input.body,
+            parentVersion?.id ?? null,
+            input.contextRefs ?? null,
+          );
+
+          // The new version has not been ruled on yet, so the decision goes
+          // back to pending — without erasing the verdict history that got here.
+          if (parent.status !== 'pending') {
+            this.applyVerdict({
+              decisionId: parent.id,
+              to: 'pending',
+              reason: `revised to v${version.num}`,
+              participant: this.upsertParticipant('agent', input.agent ?? 'agent'),
+            });
+          }
+
+          // Dedupe should track the current body, not the one that was rejected.
+          this.db
+            .prepare('UPDATE decisions SET content_hash = ? WHERE id = ?')
+            .run(hash, parent.id);
+          this.recordProvenance(parent.id, input.source, input.sessionRef ?? null);
+          this.syncFts(parent.id);
+
+          return { decision: this.getDecision(parent.id)!, version, deduped: false };
+        }
+      }
+
+      const decision: Decision = {
+        id: newId('dec'),
+        projectId: project.id,
+        sessionId: session?.id ?? null,
+        kind: input.kind,
+        title: input.title,
+        status: input.initialStatus ?? 'pending',
+        source: input.source,
+        contentHash: hash,
+        pinnedCommit: input.pinnedCommit ?? null,
+        createdAt: now(),
+        decidedAt: input.initialStatus && input.initialStatus !== 'pending' ? now() : null,
+      };
+
+      this.db
+        .prepare(
+          `INSERT INTO decisions
+             (id, project_id, session_id, kind, title, status, source, content_hash, pinned_commit, created_at, decided_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          decision.id,
+          decision.projectId,
+          decision.sessionId,
+          decision.kind,
+          decision.title,
+          decision.status,
+          decision.source,
+          decision.contentHash,
+          decision.pinnedCommit,
+          decision.createdAt,
+          decision.decidedAt,
+        );
+
+      this.recordProvenance(decision.id, input.source, input.sessionRef ?? null);
+
+      const version = this.addVersion(decision.id, input.body, null, input.contextRefs ?? null);
+
+      this.syncFts(decision.id);
+      return { decision, version, deduped: false };
+    });
+
+    return tx();
+  }
+
+  private recordProvenance(decisionId: string, source: Source, detail: string | null): void {
+    this.db
+      .prepare(
+        `INSERT INTO decision_provenance (decision_id, source, detail, seen_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (decision_id, source) DO NOTHING`,
+      )
+      .run(decisionId, source, detail, now());
+  }
+
+  addVersion(
+    decisionId: string,
+    bodyMd: string,
+    parentVersionId: string | null,
+    contextRefs: string[] | null,
+  ): Version {
+    const nextNum =
+      ((
+        this.db
+          .prepare('SELECT MAX(num) AS m FROM versions WHERE decision_id = ?')
+          .get(decisionId) as {
+          m: number | null;
+        }
+      ).m ?? 0) + 1;
+
+    const version: Version = {
+      id: newId('ver'),
+      decisionId,
+      num: nextNum,
+      bodyMd,
+      parentVersionId,
+      contextRefs,
+      submittedAt: now(),
+    };
+    this.db
+      .prepare(
+        `INSERT INTO versions (id, decision_id, num, body_md, parent_version_id, context_refs, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        version.id,
+        version.decisionId,
+        version.num,
+        version.bodyMd,
+        version.parentVersionId,
+        contextRefs ? JSON.stringify(contextRefs) : null,
+        version.submittedAt,
+      );
+    this.syncFts(decisionId);
+    return version;
+  }
+
+  // ---------- reads ----------
+
+  getDecision(id: string): Decision | null {
+    const row = this.db.prepare('SELECT * FROM decisions WHERE id = ?').get(id) as
+      | DecisionRow
+      | undefined;
+    return row ? this.rowToDecision(row) : null;
+  }
+
+  latestVersion(decisionId: string): Version | null {
+    const row = this.db
+      .prepare('SELECT * FROM versions WHERE decision_id = ? ORDER BY num DESC LIMIT 1')
+      .get(decisionId) as Record<string, unknown> | undefined;
+    return row ? this.rowToVersion(row) : null;
+  }
+
+  getVersion(decisionId: string, num: number): Version | null {
+    const row = this.db
+      .prepare('SELECT * FROM versions WHERE decision_id = ? AND num = ?')
+      .get(decisionId, num) as Record<string, unknown> | undefined;
+    return row ? this.rowToVersion(row) : null;
+  }
+
+  listVersions(decisionId: string): Version[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM versions WHERE decision_id = ? ORDER BY num ASC')
+        .all(decisionId) as Record<string, unknown>[]
+    ).map((r) => this.rowToVersion(r));
+  }
+
+  listComments(decisionId: string): Comment[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM comments WHERE decision_id = ? ORDER BY created_at ASC')
+        .all(decisionId) as Record<string, unknown>[]
+    ).map((r) => ({
+      id: r.id as string,
+      decisionId: r.decision_id as string,
+      versionId: (r.version_id as string) ?? null,
+      participantId: r.participant_id as string,
+      anchorQuote: (r.anchor_quote as string) ?? null,
+      body: r.body as string,
+      createdAt: r.created_at as number,
+      deliveredAt: (r.delivered_at as number) ?? null,
+    }));
+  }
+
+  listVerdicts(decisionId: string): VerdictEvent[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM verdict_events WHERE decision_id = ? ORDER BY at ASC')
+        .all(decisionId) as Record<string, unknown>[]
+    ).map((r) => ({
+      id: r.id as string,
+      decisionId: r.decision_id as string,
+      fromState: r.from_state as DecisionStatus,
+      toState: r.to_state as DecisionStatus,
+      participantId: r.participant_id as string,
+      reason: (r.reason as string) ?? null,
+      at: r.at as number,
+    }));
+  }
+
+  getDecisionDetail(id: string): DecisionDetail | null {
+    const decision = this.getDecision(id);
+    if (!decision) return null;
+    const projectName = (
+      this.db.prepare('SELECT name FROM projects WHERE id = ?').get(decision.projectId) as {
+        name: string;
+      }
+    ).name;
+    const provenance = (
+      this.db
+        .prepare('SELECT source, detail, seen_at FROM decision_provenance WHERE decision_id = ?')
+        .all(id) as Record<string, unknown>[]
+    ).map((r) => ({
+      source: r.source as Source,
+      detail: (r.detail as string) ?? null,
+      seenAt: r.seen_at as number,
+    }));
+
+    return {
+      ...decision,
+      projectName,
+      versions: this.listVersions(id),
+      comments: this.listComments(id),
+      verdicts: this.listVerdicts(id),
+      provenance,
+    };
+  }
+
+  listDecisions(
+    filters: SearchFilters = {},
+  ): Array<Decision & { projectName: string; versionCount: number }> {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filters.project) {
+      where.push('p.name = ?');
+      params.push(filters.project);
+    }
+    if (filters.status) {
+      where.push('d.status = ?');
+      params.push(filters.status);
+    }
+    if (filters.kind) {
+      where.push('d.kind = ?');
+      params.push(filters.kind);
+    }
+    if (filters.since) {
+      where.push('d.created_at >= ?');
+      params.push(filters.since);
+    }
+    const sql = `
+      SELECT d.*, p.name AS project_name,
+             (SELECT COUNT(*) FROM versions v WHERE v.decision_id = d.id) AS version_count
+      FROM decisions d JOIN projects p ON p.id = d.project_id
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY CASE d.status WHEN 'pending' THEN 0 WHEN 'changes_requested' THEN 1 ELSE 2 END,
+               d.created_at DESC
+      LIMIT ?`;
+    params.push(filters.limit ?? 200);
+
+    return (
+      this.db.prepare(sql).all(...params) as Array<
+        DecisionRow & { project_name: string; version_count: number }
+      >
+    ).map((r) => ({
+      ...this.rowToDecision(r),
+      projectName: r.project_name,
+      versionCount: r.version_count,
+    }));
+  }
+
+  listProjects(): Array<Project & { decisionCount: number; pendingCount: number }> {
+    return (
+      this.db
+        .prepare(
+          `SELECT p.*,
+                  COUNT(d.id) AS decision_count,
+                  SUM(CASE WHEN d.status IN ('pending','changes_requested') THEN 1 ELSE 0 END) AS pending_count
+           FROM projects p LEFT JOIN decisions d ON d.project_id = p.id
+           GROUP BY p.id ORDER BY p.name`,
+        )
+        .all() as Array<Record<string, unknown>>
+    ).map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      rootPath: (r.root_path as string) ?? null,
+      createdAt: r.created_at as number,
+      decisionCount: Number(r.decision_count ?? 0),
+      pendingCount: Number(r.pending_count ?? 0),
+    }));
+  }
+
+  getSessionDecisions(sessionId: string): Decision[] {
+    return (
+      this.db
+        .prepare('SELECT * FROM decisions WHERE session_id = ? ORDER BY created_at ASC')
+        .all(sessionId) as DecisionRow[]
+    ).map((r) => this.rowToDecision(r));
+  }
+
+  // ---------- verdicts & comments ----------
+
+  applyVerdict(input: {
+    decisionId: string;
+    to: DecisionStatus;
+    reason?: string | null;
+    participant: Participant;
+  }): VerdictEvent {
+    const tx = this.db.transaction((): VerdictEvent => {
+      const decision = this.getDecision(input.decisionId);
+      if (!decision) throw new Error(`no such decision: ${input.decisionId}`);
+
+      assertTransition(decision.status, input.to, input.reason);
+
+      const event: VerdictEvent = {
+        id: newId('vrd'),
+        decisionId: decision.id,
+        fromState: decision.status,
+        toState: input.to,
+        participantId: input.participant.id,
+        reason: input.reason?.trim() || null,
+        at: now(),
+      };
+      this.db
+        .prepare(
+          `INSERT INTO verdict_events (id, decision_id, from_state, to_state, participant_id, reason, at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          event.id,
+          event.decisionId,
+          event.fromState,
+          event.toState,
+          event.participantId,
+          event.reason,
+          event.at,
+        );
+
+      const decided = input.to === 'approved' || input.to === 'rejected' ? event.at : null;
+      this.db
+        .prepare(
+          'UPDATE decisions SET status = ?, decided_at = COALESCE(?, decided_at) WHERE id = ?',
+        )
+        .run(input.to, decided, decision.id);
+
+      this.syncFts(decision.id);
+      return event;
+    });
+    return tx();
+  }
+
+  addComments(
+    decisionId: string,
+    participant: Participant,
+    comments: Array<{ body: string; anchorQuote?: string | null; versionNum?: number }>,
+  ): Comment[] {
+    const tx = this.db.transaction((): Comment[] => {
+      const out: Comment[] = [];
+      for (const c of comments) {
+        const version = c.versionNum
+          ? this.getVersion(decisionId, c.versionNum)
+          : this.latestVersion(decisionId);
+        const comment: Comment = {
+          id: newId('cmt'),
+          decisionId,
+          versionId: version?.id ?? null,
+          participantId: participant.id,
+          anchorQuote: c.anchorQuote?.trim() || null,
+          body: c.body,
+          createdAt: now(),
+          deliveredAt: null,
+        };
+        this.db
+          .prepare(
+            `INSERT INTO comments (id, decision_id, version_id, participant_id, anchor_quote, body, created_at, delivered_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+          )
+          .run(
+            comment.id,
+            comment.decisionId,
+            comment.versionId,
+            comment.participantId,
+            comment.anchorQuote,
+            comment.body,
+            comment.createdAt,
+          );
+        out.push(comment);
+      }
+      return out;
+    });
+    return tx();
+  }
+
+  /**
+   * What a polling agent gets back. Read-only and idempotent by design: it
+   * reconstructs the outcome from committed rows, so a dropped connection, a
+   * re-poll, or a daemon restart all return the same answer.
+   */
+  reviewOutcome(decisionId: string): ReviewOutcome | null {
+    const decision = this.getDecision(decisionId);
+    if (!decision) return null;
+
+    const lastVerdict = this.listVerdicts(decisionId).at(-1) ?? null;
+    const comments = this.listComments(decisionId).map((c) => {
+      const author = this.db
+        .prepare('SELECT name FROM participants WHERE id = ?')
+        .get(c.participantId) as {
+        name: string;
+      };
+      return {
+        body: c.body,
+        anchorQuote: c.anchorQuote,
+        author: author.name,
+        createdAt: c.createdAt,
+      };
+    });
+
+    return {
+      status: decision.status,
+      reason: lastVerdict?.toState === decision.status ? lastVerdict.reason : null,
+      comments,
+      version: this.latestVersion(decisionId)?.num ?? 1,
+    };
+  }
+
+  markCommentsDelivered(decisionId: string): void {
+    this.db
+      .prepare(
+        'UPDATE comments SET delivered_at = ? WHERE decision_id = ? AND delivered_at IS NULL',
+      )
+      .run(now(), decisionId);
+  }
+
+  // ---------- search & constraints ----------
+
+  search(query: string, filters: SearchFilters = {}): SearchHit[] {
+    const rows = this.db
+      .prepare(
+        `SELECT f.decision_id AS decision_id,
+                snippet(decisions_fts, 1, '[', ']', '…', 12) AS snippet
+         FROM decisions_fts f
+         WHERE decisions_fts MATCH ?
+         ORDER BY bm25(decisions_fts)
+         LIMIT ?`,
+      )
+      .all(escapeFts(query), (filters.limit ?? 20) * 4) as Array<{
+      decision_id: string;
+      snippet: string;
+    }>;
+
+    const hits: SearchHit[] = [];
+    for (const row of rows) {
+      const detail = this.getDecisionDetail(row.decision_id);
+      if (!detail) continue;
+      if (filters.project && detail.projectName !== filters.project) continue;
+      if (filters.status && detail.status !== filters.status) continue;
+      if (filters.kind && detail.kind !== filters.kind) continue;
+      if (filters.since && detail.createdAt < filters.since) continue;
+      if (filters.until && detail.createdAt > filters.until) continue;
+
+      hits.push({
+        decisionId: detail.id,
+        title: detail.title,
+        kind: detail.kind,
+        status: detail.status,
+        projectName: detail.projectName,
+        reason: lastReason(detail.verdicts),
+        snippet: row.snippet,
+        createdAt: detail.createdAt,
+      });
+      if (hits.length >= (filters.limit ?? 20)) break;
+    }
+    return hits;
+  }
+
+  /**
+   * The pre-design briefing: what an agent must know before proposing anything,
+   * including what has already been turned down and why. Queryless on purpose —
+   * an agent cannot search for a constraint it does not know exists.
+   */
+  constraints(
+    project: string,
+    topic?: string,
+  ): {
+    project: string;
+    accepted: Array<{
+      title: string;
+      kind: DecisionKind;
+      decidedAt: number | null;
+      reason: string | null;
+    }>;
+    rejected: Array<{
+      title: string;
+      kind: DecisionKind;
+      decidedAt: number | null;
+      reason: string | null;
+    }>;
+  } {
+    const all = this.listDecisions({ project, limit: 500 });
+    const relevant = topic
+      ? all.filter((d) => {
+          const body = this.latestVersion(d.id)?.bodyMd ?? '';
+          const needle = topic.toLowerCase();
+          return d.title.toLowerCase().includes(needle) || body.toLowerCase().includes(needle);
+        })
+      : all;
+
+    const shape = (d: Decision) => ({
+      title: d.title,
+      kind: d.kind,
+      decidedAt: d.decidedAt,
+      reason: lastReason(this.listVerdicts(d.id)),
+    });
+
+    return {
+      project,
+      accepted: relevant.filter((d) => d.status === 'approved').map(shape),
+      rejected: relevant.filter((d) => d.status === 'rejected').map(shape),
+    };
+  }
+
+  // ---------- fts ----------
+
+  /** FTS is a derived index: rebuilt from decisions + latest body + latest reason. */
+  syncFts(decisionId: string): void {
+    const decision = this.getDecision(decisionId);
+    if (!decision) return;
+    const body = this.latestVersion(decisionId)?.bodyMd ?? '';
+    const reason = lastReason(this.listVerdicts(decisionId)) ?? '';
+
+    this.db.prepare('DELETE FROM decisions_fts WHERE decision_id = ?').run(decisionId);
+    this.db
+      .prepare('INSERT INTO decisions_fts (title, body, reason, decision_id) VALUES (?, ?, ?, ?)')
+      .run(decision.title, body, reason, decisionId);
+  }
+
+  // ---------- mapping ----------
+
+  private rowToDecision(r: DecisionRow): Decision {
+    return {
+      id: r.id,
+      projectId: r.project_id,
+      sessionId: r.session_id,
+      kind: r.kind,
+      title: r.title,
+      status: r.status,
+      source: r.source,
+      contentHash: r.content_hash,
+      pinnedCommit: r.pinned_commit,
+      createdAt: r.created_at,
+      decidedAt: r.decided_at,
+    };
+  }
+
+  private rowToVersion(r: Record<string, unknown>): Version {
+    return {
+      id: r.id as string,
+      decisionId: r.decision_id as string,
+      num: r.num as number,
+      bodyMd: r.body_md as string,
+      parentVersionId: (r.parent_version_id as string) ?? null,
+      contextRefs: r.context_refs ? (JSON.parse(r.context_refs as string) as string[]) : null,
+      submittedAt: r.submitted_at as number,
+    };
+  }
+}
+
+function lastReason(verdicts: VerdictEvent[]): string | null {
+  for (let i = verdicts.length - 1; i >= 0; i--) {
+    if (verdicts[i].reason) return verdicts[i].reason;
+  }
+  return null;
+}
+
+/** FTS5 treats bare punctuation as syntax; quote each term so user text is literal. */
+function escapeFts(query: string): string {
+  const terms = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  if (terms.length === 0) return '""';
+  return terms.map((t) => `"${t}"`).join(' OR ');
+}

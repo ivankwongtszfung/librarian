@@ -1,0 +1,60 @@
+{
+  "name": "@ivankwong/librarian",
+  "version": "0.1.0",
+  "description": "A local-first decision library for AI agent sessions. Agents submit plans and ADRs over MCP; you read, comment, and green- or red-light them; every verdict becomes memory the agents can query.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "librarian": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "files": ["dist", "src/store/migrations", "public", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run build:assets",
+    "build:assets": "node -e \"require('node:fs').cpSync('src/store/migrations','dist/store/migrations',{recursive:true})\"",
+    "prepare": "npm run build",
+    "dev": "tsx watch src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest run && cucumber-js",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "bdd": "cucumber-js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run test"
+  },
+  "keywords": [
+    "mcp",
+    "adr",
+    "architecture-decision-record",
+    "ai-agents",
+    "claude-code",
+    "human-in-the-loop",
+    "local-first"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivankwongtszfung/librarian.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "better-sqlite3": "^11.7.0",
+    "chokidar": "^4.0.3",
+    "express": "^4.21.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@cucumber/cucumber": "^11.3.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^4.17.25",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

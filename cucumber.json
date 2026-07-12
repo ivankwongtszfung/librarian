@@ -1,0 +1,9 @@
+{
+  "default": {
+    "paths": ["tests/features/**/*.feature"],
+    "import": ["tests/tsx-register.js", "tests/steps/**/*.ts"],
+    "format": ["progress-bar", "summary"],
+    "formatOptions": { "snippetInterface": "async-await" },
+    "timeout": 30000
+  }
+}
