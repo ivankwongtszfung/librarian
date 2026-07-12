@@ -1,0 +1,244 @@
+<title>Librarian — Build & Verification Report</title>
+<style>
+  :root {
+    --bg:#F7F8F5; --surface:#FFFFFF; --ink:#1B231E; --muted:#5C665F; --line:#DDE2DB;
+    --green:#1B7A4A; --green-ink:#14603A; --green-soft:#E7F1E9;
+    --red:#BC4438; --red-soft:#F7EAE8; --amber:#A87614; --amber-soft:#F5EEDC;
+    --code-bg:#EEF1EC; --term-bg:#141A13; --term-ink:#D6DED4;
+    --sans:"Avenir Next",Avenir,"Helvetica Neue",system-ui,sans-serif;
+    --serif:Charter,"Bitstream Charter",Cambria,Georgia,serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#11160F; --surface:#181F16; --ink:#E4EAE2; --muted:#93A093; --line:#2A342A;
+      --green:#4CBE7E; --green-ink:#6FD79C; --green-soft:#1A2B1F;
+      --red:#E07A6C; --red-soft:#2E1D1A; --amber:#D9AE55; --amber-soft:#2B2415;
+      --code-bg:#212A1F; --term-bg:#0C110B; --term-ink:#D6DED4; }
+  }
+  :root[data-theme="dark"]{ --bg:#11160F; --surface:#181F16; --ink:#E4EAE2; --muted:#93A093; --line:#2A342A;
+    --green:#4CBE7E; --green-ink:#6FD79C; --green-soft:#1A2B1F; --red:#E07A6C; --red-soft:#2E1D1A;
+    --amber:#D9AE55; --amber-soft:#2B2415; --code-bg:#212A1F; --term-bg:#0C110B; --term-ink:#D6DED4; }
+  :root[data-theme="light"]{ --bg:#F7F8F5; --surface:#FFFFFF; --ink:#1B231E; --muted:#5C665F; --line:#DDE2DB;
+    --green:#1B7A4A; --green-ink:#14603A; --green-soft:#E7F1E9; --red:#BC4438; --red-soft:#F7EAE8;
+    --amber:#A87614; --amber-soft:#F5EEDC; --code-bg:#EEF1EC; --term-bg:#141A13; --term-ink:#D6DED4; }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--serif);font-size:1.03rem;line-height:1.6}
+  a{color:var(--green-ink)}
+  a:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+  .wrap{max-width:64rem;margin:0 auto;padding:0 1.25rem 5rem}
+
+  header{padding:3rem 0 1.75rem;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 .8rem}
+  h1{font-family:var(--sans);font-weight:700;font-size:clamp(1.8rem,4.5vw,2.6rem);line-height:1.1;margin:0 0 .5rem;letter-spacing:-.015em;text-wrap:balance}
+  .sub{color:var(--muted);font-size:1.1rem;max-width:44rem;margin:0 0 1.25rem;text-wrap:balance}
+  .repo{font-family:var(--mono);font-size:.8rem}
+
+  .gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem;margin:1.5rem 0 0}
+  .gate{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--green);border-radius:8px;padding:.8rem .9rem}
+  .gate .k{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .gate .v{font-family:var(--sans);font-weight:700;font-size:1.35rem;color:var(--green-ink);font-variant-numeric:tabular-nums;line-height:1.3}
+  .gate .n{font-size:.78rem;color:var(--muted)}
+
+  section{padding:2rem 0;border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:none}
+  h2{font-family:var(--sans);font-weight:700;font-size:1.35rem;margin:0 0 .9rem}
+  h2 .sec{display:block;font-family:var(--mono);font-weight:500;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:.3rem}
+  h3{font-family:var(--sans);font-weight:600;font-size:1rem;margin:1.4rem 0 .5rem}
+  p{margin:0 0 1rem;max-width:46rem}
+  ul{margin:0 0 1rem;padding-left:1.3rem;max-width:46rem}
+  li{margin-bottom:.4rem}
+  code{font-family:var(--mono);font-size:.82em;background:var(--code-bg);padding:.08em .35em;border-radius:4px}
+
+  .term{background:var(--term-bg);color:var(--term-ink);border-radius:9px;padding:1rem 1.15rem;overflow-x:auto;
+        font-family:var(--mono);font-size:.76rem;line-height:1.65;margin:1rem 0;white-space:pre}
+  .term .ok{color:#7BD69C}.term .no{color:#F09383}.term .dim{color:#7C8A7C}.term .warn{color:#E2BE6B}.term .hl{color:#fff;font-weight:600}
+
+  .tablewrap{overflow-x:auto;margin:1rem 0;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:.87rem}
+  th,td{text-align:left;padding:.55rem .85rem;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  th{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  td{font-variant-numeric:tabular-nums}
+  .pass{color:var(--green-ink);font-family:var(--mono);font-size:.78rem;white-space:nowrap}
+
+  .chip{font-family:var(--mono);font-size:.68rem;padding:.18rem .55rem;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+  .chip.ok{border-color:var(--green);color:var(--green-ink);background:var(--green-soft)}
+  .chip.no{border-color:var(--red);color:var(--red);background:var(--red-soft)}
+
+  .bug{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:0 8px 8px 0;padding:.85rem 1.1rem;margin-bottom:.8rem}
+  .bug h4{font-family:var(--sans);font-size:.98rem;margin:0 0 .35rem}
+  .bug p{font-size:.9rem;margin:0;color:var(--muted);max-width:none}
+  .bug p b{color:var(--ink);font-weight:600}
+
+  .flow{list-style:none;padding:0;counter-reset:s;margin:1rem 0}
+  .flow li{counter-increment:s;position:relative;padding:0 0 1rem 2.5rem;border-left:1px solid var(--line);margin-left:.85rem}
+  .flow li:last-child{border-left-color:transparent;padding-bottom:0}
+  .flow li::before{content:counter(s);font-family:var(--mono);font-size:.72rem;font-weight:600;color:var(--green-ink);
+    background:var(--green-soft);border:1px solid var(--green);width:1.6rem;height:1.6rem;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;position:absolute;left:-.85rem;top:-.1rem}
+  .flow b{font-family:var(--sans);font-weight:600}
+
+  .quote{background:var(--red-soft);border-left:3px solid var(--red);border-radius:0 8px 8px 0;
+    padding:.9rem 1.15rem;margin:1rem 0;font-size:.95rem}
+  .quote .lbl{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--red);display:block;margin-bottom:.35rem}
+
+  footer{margin-top:2.5rem;padding-top:1.25rem;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:.7rem;color:var(--muted);line-height:1.7}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Librarian · Build &amp; Verification Report · 2026-07-12</p>
+  <h1>It runs. And it remembers the red light.</h1>
+  <p class="sub">The backend is implemented, tested end to end against a live daemon, and shipped. Its first real decision was its own deployment ADR — reviewed through Librarian itself.</p>
+  <p class="repo"><a href="https://github.com/ivankwongtszfung/librarian">github.com/ivankwongtszfung/librarian</a> · public · MIT</p>
+
+  <div class="gates">
+    <div class="gate"><div class="k">Unit tests</div><div class="v">30 / 30</div><div class="n">vitest · 3 files</div></div>
+    <div class="gate"><div class="k">BDD scenarios</div><div class="v">14 / 14</div><div class="n">73 steps · 4.9s</div></div>
+    <div class="gate"><div class="k">Lint</div><div class="v">clean</div><div class="n">biome · 28 files</div></div>
+    <div class="gate"><div class="k">Typecheck</div><div class="v">clean</div><div class="n">tsc strict</div></div>
+    <div class="gate"><div class="k">Shipped</div><div class="v">public</div><div class="n">MIT · 7 topics</div></div>
+  </div>
+</header>
+
+<section>
+  <h2><span class="sec">01 · The gate</span>npm run check</h2>
+  <p>Lint, typecheck, unit tests, and the full acceptance suite, from a clean <code>dist/</code>. The whole thing exits in about eight seconds.</p>
+  <div class="term"><span class="dim">$</span> npm run check
+
+<span class="dim">&gt; biome check .</span>
+<span class="ok">Checked 28 files in 25ms. No fixes applied.</span>
+
+<span class="dim">&gt; tsc --noEmit</span>
+<span class="ok">✓ no errors</span>
+
+<span class="dim">&gt; vitest run</span>
+ <span class="ok">✓</span> tests/unit/extract.test.ts  <span class="dim">(11 tests)</span>   3ms
+ <span class="ok">✓</span> tests/unit/domain.test.ts   <span class="dim">( 9 tests)</span>   3ms
+ <span class="ok">✓</span> tests/unit/store.test.ts    <span class="dim">(10 tests)</span>  21ms
+
+ Test Files  <span class="ok">3 passed (3)</span>
+      Tests  <span class="ok">30 passed (30)</span>
+
+<span class="dim">&gt; cucumber-js</span>
+<span class="ok">14 scenarios (14 passed)</span>
+<span class="ok">73 steps (73 passed)</span>
+0m04.875s</div>
+</section>
+
+<section>
+  <h2><span class="sec">02 · Acceptance</span>The scenarios are the spec</h2>
+  <p>The <code>.feature</code> files aren't decoration — they drive a <strong>real daemon over real HTTP with a real MCP client</strong>. No mocks in the middle. If a scenario passes here, an agent can do it.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Feature</th><th>Scenario</th><th></th></tr>
+    <tr><td rowspan="3">Submit for review</td><td>Agent submits a plan → pending, SSE event, notification</td><td class="pass">✓</td></tr>
+    <tr><td>Revision links lineage → v2 on the same decision, non-empty diff</td><td class="pass">✓</td></tr>
+    <tr><td><code>record_decision</code> files an FYI entry without paging the human</td><td class="pass">✓</td></tr>
+    <tr><td rowspan="4">Long-poll delivery</td><td>Poll returns <code>pending</code> on hold expiry (~2s, measured)</td><td class="pass">✓</td></tr>
+    <tr><td>Verdict arrives during hold → the call wakes on it, not on the timeout</td><td class="pass">✓</td></tr>
+    <tr><td><b>Connection drops mid-hold</b> → verdict persists, reconnect returns it, repeats are identical</td><td class="pass">✓</td></tr>
+    <tr><td><b>Daemon restarts while pending</b> → recovered from the store, still pending</td><td class="pass">✓</td></tr>
+    <tr><td rowspan="2">Verdict guards</td><td>Reject with no reason → <code>422</code>, and no event written</td><td class="pass">✓</td></tr>
+    <tr><td>Anchored comments return to the agent and move the decision</td><td class="pass">✓</td></tr>
+    <tr><td rowspan="2">Red-light memory</td><td>Rejections are first-class in search, reason verbatim</td><td class="pass">✓</td></tr>
+    <tr><td>Constraints digest lists accepted <em>and</em> rejected, with reasons</td><td class="pass">✓</td></tr>
+    <tr><td rowspan="3">Watcher</td><td>Approved plan captured without agent cooperation</td><td class="pass">✓</td></tr>
+    <tr><td>A rejected plan is <em>not</em> captured as a decision</td><td class="pass">✓</td></tr>
+    <tr><td>Dedupe across ingestion paths → one decision, both provenances</td><td class="pass">✓</td></tr>
+  </table></div>
+  <p>The two reconnect scenarios exist to pin a property that a future refactor could quietly break: the long-poll is an <em>idempotent read</em> reconstructed from committed rows. Losing the connection costs latency, never a verdict.</p>
+</section>
+
+<section>
+  <h2><span class="sec">03 · Dogfood</span>The first real decision</h2>
+  <p>Librarian's first use case was its own deployment question. I wrote <strong>ADR-001: How Librarian is deployed</strong> — comparing manual startup, a launchd/systemd user service, Docker, a hosted service, and a hosted relay — then submitted it <em>through Librarian's own MCP server</em>, exactly as an agent would.</p>
+
+  <ol class="flow">
+    <li><b>Agent asks what it must know.</b> <code>get_constraints("librarian")</code> → empty. Nothing decided yet.</li>
+    <li><b>Agent submits the ADR.</b> <code>submit_for_review</code> → <code>dec_9cb19238…</code>, status <code>pending</code>.</li>
+    <li><b>Agent blocks.</b> <code>get_review</code> → <em>"Still awaiting the human."</em> The session is now genuinely gated on a person reading the doc.</li>
+    <li><b>Human reads and approves.</b> The recommendation: a per-user background service, with Tailscale demoted from hard dependency to an optional tier. Docker and hosted-SaaS rejected — both destroy the trust layer, because a daemon that can't read your repos can't verify a design's claims.</li>
+    <li><b>A second agent proposes Docker anyway</b> — it wasn't in the conversation and has no memory of it.</li>
+    <li><b>Red light, with a reason.</b> A reasonless rejection is refused first (<code>422</code>). Then the real one lands.</li>
+    <li><b>A third, fresh agent asks what it must know.</b> And this is the whole product.</li>
+  </ol>
+
+  <div class="term"><span class="dim">$</span> curl -X POST .../verdict -d '{"to":"rejected"}'
+<span class="no">HTTP 422</span>  <span class="dim">← a red light with no reason is not a decision, it's a shrug</span>
+
+<span class="dim">$</span> curl -X POST .../verdict -d '{"to":"rejected","reason":"bind-mounting the home dir …"}'
+<span class="ok">{"ok":true,"status":"rejected"}</span>
+
+<span class="dim">$</span> <span class="hl">agent-3 → get_constraints("librarian")</span>
+{
+  "accepted": [
+    { "title": <span class="ok">"ADR-001: How Librarian is deployed"</span>, "kind": "adr" }
+  ],
+  "rejected": [
+    { "title": <span class="no">"Ship Librarian as a Docker container"</span>,
+      "reason": <span class="warn">"bind-mounting the home dir to restore the trust
+                  layer defeats the point of the container (see ADR-001)"</span> }
+  ],
+  "guidance": <span class="hl">"The rejected items are standing red lights.
+               Re-proposing one without addressing its reason
+               will be rejected again."</span>
+}</div>
+
+  <div class="quote">
+    <span class="lbl">The thesis, working</span>
+    An agent that was never part of the conversation now knows what was turned down — <strong>and why</strong> — before it designs anything. The rejection didn't scroll away. It became a constraint.
+  </div>
+</section>
+
+<section>
+  <h2><span class="sec">04 · Found</span>Two bugs the process caught</h2>
+  <p>Both were invisible to the test suite as written. One was caught by insisting the process exit cleanly; the other only by running the <em>built</em> artifact instead of the source.</p>
+
+  <div class="bug">
+    <h4>The daemon could not shut down</h4>
+    <p>The long-poll and SSE need Node's 300s <code>requestTimeout</code> disabled — otherwise the server kills its own held requests. But that also means <b>idle keep-alive sockets never expire</b>, so <code>server.close()</code> waits forever for them. <code>npm test</code> hung after passing; a real daemon would have hung on <code>SIGTERM</code>. Fixed with an explicit <code>closeAllConnections()</code>, plus <code>unref()</code> on the in-flight hold timer.</p>
+  </div>
+
+  <div class="bug">
+    <h4>The built package had no database</h4>
+    <p><code>tsc</code> doesn't copy <code>.sql</code> files, so <code>dist/store/migrations/</code> didn't exist and the built daemon died on first boot: <code>ENOENT: no such file or directory</code>. Every test passed anyway, because vitest and cucumber run from source via tsx. <b>Only the end-to-end smoke test against <code>dist/</code> exposed it.</b> Fixed with a build:assets step.</p>
+  </div>
+
+  <p>A third issue was a genuine design correction, caught by a failing scenario: a revision was minting a <em>new</em> decision instead of adding v2 to the existing one. The plan was explicit — one decision is one review thread — and the fix means the doc, the comments, and the red light that prompted the rewrite all stay together. The state machine now allows <code>rejected → pending</code>, which is exactly the rejection lineage the PRD celebrates: <strong>rejected → revised → approved</strong>, with none of it overwritten.</p>
+</section>
+
+<section>
+  <h2><span class="sec">05 · Shipped</span>What exists now</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Piece</th><th>What it is</th><th>State</th></tr>
+    <tr><td>MCP gateway</td><td>5 tools: submit_for_review · get_review (long-poll) · record_decision · search_decisions · get_constraints</td><td><span class="chip ok">built</span></td></tr>
+    <tr><td>Store</td><td>SQLite + FTS5, WAL. Append-only verdict events; a CHECK constraint enforces reasons on rejection</td><td><span class="chip ok">built</span></td></tr>
+    <tr><td>REST + SSE</td><td>Library, detail, diff, verdict, comments, live event stream</td><td><span class="chip ok">built</span></td></tr>
+    <tr><td>Library web page</td><td>Needs-you triage, status-coloured cards, doc reading, version diffs, verdict buttons</td><td><span class="chip ok">built</span></td></tr>
+    <tr><td>Transcript watcher</td><td>Auto-captures approved plans and <code>docs/**</code> writes even when the agent forgets to submit</td><td><span class="chip ok">built</span></td></tr>
+    <tr><td>Reviewer panel</td><td>Role-scoped agents that pre-review each doc — the librarian consistency-checker</td><td><span class="chip">next</span></td></tr>
+    <tr><td>Trust layer</td><td>Verify a doc's cited files/functions against the real repo; flag phantom references</td><td><span class="chip">next</span></td></tr>
+    <tr><td>iOS app</td><td>Design brief written (<code>docs/design-brief.md</code>), not yet executed</td><td><span class="chip">next</span></td></tr>
+  </table></div>
+
+  <h3>Try it</h3>
+  <div class="term"><span class="dim">$</span> git clone https://github.com/ivankwongtszfung/librarian
+<span class="dim">$</span> cd librarian &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; npm start
+
+<span class="ok">librarian listening on http://127.0.0.1:7801</span>
+  library   http://127.0.0.1:7801/
+  mcp       http://127.0.0.1:7801/mcp
+  store     ~/.librarian/librarian.db
+  watching  ~/.claude/projects
+
+<span class="dim">$</span> claude mcp add --transport http librarian http://127.0.0.1:7801/mcp</div>
+</section>
+
+<footer>
+  LIBRARIAN · BUILD &amp; VERIFICATION REPORT · 2026-07-12<br>
+  30 unit tests · 14 acceptance scenarios · 73 steps · lint and typecheck clean · verified against a live daemon<br>
+  rent the conversation, own the decisions
+</footer>
+</div>
