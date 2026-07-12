@@ -1,0 +1,487 @@
+<title>Librarian — Backend Plan</title>
+<style>
+  :root {
+    --bg: #F7F8F5; --surface: #FFFFFF; --ink: #1B231E; --muted: #5C665F;
+    --line: #DDE2DB; --green: #1B7A4A; --green-ink: #14603A; --green-soft: #E7F1E9;
+    --red: #BC4438; --red-soft: #F7EAE8; --amber: #A87614; --amber-soft: #F5EEDC;
+    --code-bg: #EEF1EC;
+    --font-display: "Avenir Next", Avenir, "Helvetica Neue", "Segoe UI", sans-serif;
+    --font-body: Charter, "Bitstream Charter", Cambria, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11160F; --surface: #181F16; --ink: #E4EAE2; --muted: #93A093;
+      --line: #2A342A; --green: #4CBE7E; --green-ink: #6FD79C; --green-soft: #1A2B1F;
+      --red: #E07A6C; --red-soft: #2E1D1A; --amber: #D9AE55; --amber-soft: #2B2415;
+      --code-bg: #212A1F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11160F; --surface: #181F16; --ink: #E4EAE2; --muted: #93A093;
+    --line: #2A342A; --green: #4CBE7E; --green-ink: #6FD79C; --green-soft: #1A2B1F;
+    --red: #E07A6C; --red-soft: #2E1D1A; --amber: #D9AE55; --amber-soft: #2B2415;
+    --code-bg: #212A1F;
+  }
+  :root[data-theme="light"] {
+    --bg: #F7F8F5; --surface: #FFFFFF; --ink: #1B231E; --muted: #5C665F;
+    --line: #DDE2DB; --green: #1B7A4A; --green-ink: #14603A; --green-soft: #E7F1E9;
+    --red: #BC4438; --red-soft: #F7EAE8; --amber: #A87614; --amber-soft: #F5EEDC;
+    --code-bg: #EEF1EC;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:1.04rem; line-height:1.62; }
+  a { color: var(--green-ink); }
+  a:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
+  .wrap { max-width: 62rem; margin:0 auto; padding:0 1.25rem 5rem; }
+  header { padding:3.25rem 0 2rem; border-bottom:1px solid var(--line); }
+  .eyebrow { font-family:var(--font-mono); font-size:0.7rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); margin:0 0 0.9rem; }
+  h1 { font-family:var(--font-display); font-weight:700; font-size:clamp(1.9rem,4.5vw,2.7rem); line-height:1.1; margin:0 0 0.6rem; letter-spacing:-0.015em; text-wrap:balance; }
+  .sub { color:var(--muted); font-size:1.12rem; max-width:44rem; margin:0; text-wrap:balance; }
+  section { padding:2.1rem 0; border-bottom:1px solid var(--line); }
+  section:last-of-type { border-bottom:none; }
+  h2 { font-family:var(--font-display); font-weight:700; font-size:1.4rem; margin:0 0 1rem; }
+  h2 .sec { display:block; font-family:var(--font-mono); font-weight:500; font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--green); margin-bottom:0.35rem; }
+  h3 { font-family:var(--font-display); font-weight:600; font-size:1.05rem; margin:1.5rem 0 0.5rem; }
+  p { margin:0 0 1rem; max-width:46rem; }
+  ul, ol { margin:0 0 1rem; padding-left:1.35rem; max-width:46rem; }
+  li { margin-bottom:0.4rem; }
+  code { font-family:var(--font-mono); font-size:0.82em; background:var(--code-bg); padding:0.08em 0.35em; border-radius:4px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:1rem 1.1rem; overflow-x:auto; font-size:0.8rem; line-height:1.55; margin:1rem 0; }
+  pre code { background:none; padding:0; font-size:1em; }
+  .chip { font-family:var(--font-mono); font-size:0.68rem; padding:0.22rem 0.6rem; border-radius:999px; border:1px solid var(--line); background:var(--surface); color:var(--muted); white-space:nowrap; }
+  .chip.ok { border-color:var(--green); color:var(--green-ink); background:var(--green-soft); }
+  .chip.no { border-color:var(--red); color:var(--red); background:var(--red-soft); }
+  .chip.mid { border-color:var(--amber); color:var(--amber); background:var(--amber-soft); }
+
+  /* ADR cards */
+  .adr { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:1rem 1.2rem; margin:0 0 0.9rem; }
+  .adr .head { display:flex; flex-wrap:wrap; gap:0.6rem; align-items:baseline; margin-bottom:0.45rem; }
+  .adr .id { font-family:var(--font-mono); font-size:0.72rem; color:var(--muted); }
+  .adr .t { font-family:var(--font-display); font-weight:600; font-size:1rem; }
+  .adr p { font-size:0.92rem; margin:0.3rem 0 0; max-width:none; }
+  .adr .why { color:var(--muted); }
+  .adr .red { color:var(--red); }
+
+  /* tables */
+  .tablewrap { overflow-x:auto; margin:1rem 0; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+  table { border-collapse:collapse; width:100%; font-size:0.87rem; }
+  th, td { text-align:left; padding:0.55rem 0.85rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:none; }
+  th { font-family:var(--font-mono); font-size:0.67rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); font-weight:500; }
+  td code { white-space:nowrap; }
+  td { font-variant-numeric: tabular-nums; }
+
+  /* diagrams shared */
+  .dwrap { overflow-x:auto; margin:1.1rem 0; border:1px solid var(--line); border-radius:8px; background:var(--surface); padding:1.1rem; }
+  .dtitle { font-family:var(--font-mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin:0 0 0.9rem; }
+
+  /* sequence diagrams */
+  .seq { position:relative; min-width:660px; }
+  .seq .actors { display:flex; margin-bottom:0.4rem; }
+  .seq .actors div { flex:1; text-align:center; font-family:var(--font-display); font-weight:600; font-size:0.8rem; }
+  .seq .actors div span { display:inline-block; background:var(--code-bg); border:1px solid var(--line); border-radius:6px; padding:0.25rem 0.6rem; }
+  .seq .body { position:relative; }
+  .life { position:absolute; top:0; bottom:0; width:1px; background:var(--line); }
+  .msg { position:relative; height:42px; }
+  .msg .lbl { position:absolute; top:1px; font-family:var(--font-mono); font-size:0.68rem; color:var(--ink); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .msg .ln { position:absolute; top:24px; border-top:1.6px solid var(--ink); }
+  .msg .ln.dash { border-top-style:dashed; border-top-color:var(--muted); }
+  .msg .ln.g { border-top-color:var(--green); }
+  .msg .ln.r { border-top-color:var(--red); }
+  .msg .ln::after { content:""; position:absolute; top:-5px; border:5px solid transparent; }
+  .msg .ln.right::after { right:-1px; border-left-color:var(--ink); border-right:none; }
+  .msg .ln.left::after { left:-1px; border-right-color:var(--ink); border-left:none; }
+  .msg .ln.dash.right::after { border-left-color:var(--muted); }
+  .msg .ln.dash.left::after { border-right-color:var(--muted); }
+  .msg .ln.g.right::after { border-left-color:var(--green); }
+  .msg .ln.g.left::after { border-right-color:var(--green); }
+  .msg .ln.r.right::after { border-left-color:var(--red); }
+  .msg .ln.r.left::after { border-right-color:var(--red); }
+  .selfmsg { position:relative; height:40px; }
+  .selfmsg .box { position:absolute; top:6px; font-family:var(--font-mono); font-size:0.68rem; color:var(--muted); border:1px dashed var(--line); border-radius:6px; padding:0.2rem 0.55rem; background:var(--bg); transform:translateX(-50%); }
+  .noterow { position:relative; height:38px; }
+  .noterow .note { position:absolute; left:4%; right:4%; top:4px; text-align:center; font-family:var(--font-mono); font-size:0.68rem; color:var(--amber); border:1px dashed var(--amber); border-radius:6px; padding:0.2rem 0.5rem; background:var(--amber-soft); }
+
+  /* entity cards */
+  .er { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0.9rem; margin:1rem 0; }
+  .ent { background:var(--surface); border:1px solid var(--line); border-radius:8px; overflow:hidden; font-size:0.8rem; }
+  .ent .name { font-family:var(--font-mono); font-weight:600; font-size:0.78rem; padding:0.45rem 0.8rem; background:var(--code-bg); border-bottom:1px solid var(--line); }
+  .ent ul { list-style:none; margin:0; padding:0.5rem 0.8rem; font-family:var(--font-mono); font-size:0.72rem; line-height:1.8; color:var(--muted); }
+  .ent ul li { margin:0; }
+  .ent ul li b { color:var(--ink); font-weight:600; }
+  .ent .rel { border-top:1px dashed var(--line); padding:0.4rem 0.8rem; font-family:var(--font-mono); font-size:0.68rem; color:var(--green-ink); }
+
+  /* component diagram */
+  .comp { min-width:640px; font-family:var(--font-mono); font-size:0.72rem; }
+  .comp .row { display:flex; gap:0.7rem; justify-content:center; margin:0.35rem 0; flex-wrap:nowrap; }
+  .comp .node { border:1px solid var(--line); background:var(--bg); border-radius:6px; padding:0.4rem 0.7rem; text-align:center; }
+  .comp .node small { display:block; color:var(--muted); font-size:0.62rem; }
+  .comp .daemon { border:1.5px solid var(--green); border-radius:10px; padding:0.8rem; margin:0.4rem auto; background:var(--green-soft); }
+  .comp .daemon .dl { text-align:center; color:var(--green-ink); font-weight:600; margin-bottom:0.5rem; }
+  .comp .arrows { text-align:center; color:var(--muted); letter-spacing:0.35em; }
+
+  .flow-note { font-size:0.85rem; color:var(--muted); max-width:46rem; }
+
+  footer { margin-top:2.5rem; padding-top:1.25rem; border-top:1px solid var(--line); font-family:var(--font-mono); font-size:0.7rem; color:var(--muted); line-height:1.7; }
+  @media (max-width:700px){ .seq{min-width:640px;} }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Librarian · Backend Plan v1 · 2026-07-12 · scope: Phase 1 (+ Phase 2 hooks)</p>
+    <h1>Backend Plan — the daemon behind the library</h1>
+    <p class="sub">One Node/TS process on the Mac: MCP gateway for agents, JSON API + SSE for the web and iOS apps, transcript watcher for auto-capture, SQLite as the permanent decision store. Planned BDD-first: every milestone ships when its scenarios pass.</p>
+  </header>
+
+  <section id="scope">
+    <h2><span class="sec">01</span>Scope &amp; non-goals</h2>
+    <p><strong>In scope (Phase 1):</strong> store + schema · MCP tools (<code>submit_for_review</code>, <code>get_review</code>, <code>record_decision</code>, <code>search_decisions</code>, <code>get_constraints</code>) · REST + SSE for clients · transcript watcher (auto-capture) · verdict/comment endpoints (so the apps work end-to-end) · notification hook to ntfy.</p>
+    <p><strong>Hooks for Phase 2, built but minimal:</strong> version lineage + diff endpoint, verdict state machine with reasons (red lights recorded from day one).</p>
+    <p><strong>Non-goals now:</strong> reviewer panel (librarian agent), enrichment/ripgrep verification, Discord surface, tmux/native-prompt adapter, retro-mining the 750&nbsp;MB backlog.</p>
+  </section>
+
+  <section id="adrs">
+    <h2><span class="sec">02</span>Backend ADRs</h2>
+    <p class="flow-note">Dogfooding our own thesis: rejected alternatives are recorded with the same weight — these red lights are load-bearing decisions.</p>
+
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B1</span><span class="t">Node/TS, single daemon process</span><span class="chip ok">accepted</span></div>
+      <p>One process serves MCP, REST/SSE, and the watcher. Official MCP TS SDK; one language end-to-end with the web client.</p>
+      <p class="why"><b>Rejected:</b> Python/FastMCP (second stack for API+web), Go (slower iteration on an API-heavy product).</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B2</span><span class="t">SQLite (WAL) + FTS5 as the system of record</span><span class="chip ok">accepted</span></div>
+      <p>Zero-ops, single file on the user's disk, FTS5 covers <code>search_decisions</code>. WAL for concurrent readers while the watcher writes.</p>
+      <p class="why"><b>Rejected:</b> Postgres (ops burden, nothing needed), graph DB as primary (kept as later export target for codebase-memory-mcp).</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B3</span><span class="t">MCP transport: streamable HTTP, one shared server</span><span class="chip ok">accepted</span></div>
+      <p>All agent sessions point at <code>http://127.0.0.1:7801/mcp</code>. Shared state trivially; a 20-line stdio→HTTP shim ships for stdio-only agents.</p>
+      <p class="why"><b>Rejected:</b> stdio-per-session (N processes sharing one DB, and the apps still need a daemon anyway).</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B4</span><span class="t">Verdict delivery: server-side long-poll</span><span class="chip ok">accepted</span></div>
+      <p><code>get_review(review_id, wait_seconds≤50)</code> holds the request server-side, returns <code>pending</code> on timeout; agent re-calls. Few calls, no busy-loop, safe under every client's tool timeout. Tool description instructs agents to back off between polls.</p>
+      <p class="why"><b>Rejected:</b> one blocking call (MCP clients time out inconsistently → agent guesses), naive fast polling (token burn), MCP elicitation (routes to the agent's own UI — wrong screen by definition).</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B5</span><span class="t">Dual ingestion: MCP push + transcript watcher</span><span class="chip ok">accepted</span></div>
+      <p>Agents that follow the convention push via MCP; the watcher tails <code>~/.claude/projects/**/*.jsonl</code> and auto-captures approved <code>ExitPlanMode</code> plans and <code>docs/**</code> writes so nothing is missed. Content-hash dedupe merges the two paths.</p>
+      <p class="why"><b>Rejected:</b> MCP-only (forgetful agents create silent gaps in the library — the product promise is "save every decision").</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B6</span><span class="t">Client API: REST + SSE</span><span class="chip ok">accepted</span></div>
+      <p>Plain REST for reads/verdicts/comments; one SSE stream for live updates. Trivially consumable from fetch and URLSession.</p>
+      <p class="why"><b>Rejected:</b> WebSocket (no duplex need), GraphQL (schema ceremony for two known clients).</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B7</span><span class="t">Enrichment v1 via ripgrep subprocess</span><span class="chip mid">proposed · Phase 2</span></div>
+      <p>Reference verification (phantom-file/function flags) shells out to <code>rg</code>; codebase-memory-mcp becomes an optional backend later. Interface designed now, implemented later.</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B8</span><span class="t">GitHub PRs as the review transport</span><span class="chip no">rejected</span></div>
+      <p class="red">Rejected 2026-07-11: no cross-session triage, no agent-queryable red-light memory, requires network+GitHub for a local-first tool. Kept as a zero-code pilot idea only.</p>
+    </div>
+    <div class="adr">
+      <div class="head"><span class="id">ADR-B9</span><span class="t">tmux scraping as the foundation layer</span><span class="chip no">rejected</span></div>
+      <p class="red">Rejected 2026-07-11: brittle, Claude-only, and Omnara already ships native-prompt remote approval. Demoted to an optional future adapter; the foundation speaks MCP only.</p>
+    </div>
+  </section>
+
+  <section id="uml">
+    <h2><span class="sec">03</span>Domain model (UML) &amp; schema</h2>
+    <div class="er">
+      <div class="ent">
+        <div class="name">Project</div>
+        <ul><li><b>id</b> pk</li><li>name</li><li>root_path</li></ul>
+        <div class="rel">1 ⟶ * Session · 1 ⟶ * Decision</div>
+      </div>
+      <div class="ent">
+        <div class="name">Session</div>
+        <ul><li><b>id</b> pk</li><li>project_id fk</li><li>agent (claude-code…)</li><li>external_ref (transcript)</li><li>started_at</li></ul>
+        <div class="rel">1 ⟶ * Decision</div>
+      </div>
+      <div class="ent">
+        <div class="name">Decision</div>
+        <ul><li><b>id</b> pk</li><li>project_id · session_id</li><li>kind plan|adr|prd|arch</li><li>title</li><li><b>status</b> pending|approved|rejected|superseded</li><li>source mcp|watcher</li><li>content_hash (dedupe)</li><li>pinned_commit</li><li>created_at · decided_at</li></ul>
+        <div class="rel">1 ⟶ * Version · Comment · VerdictEvent</div>
+      </div>
+      <div class="ent">
+        <div class="name">Version</div>
+        <ul><li><b>id</b> pk</li><li>decision_id fk</li><li>num (1,2,…)</li><li>body_md</li><li>parent_version_id</li><li>submitted_at</li></ul>
+        <div class="rel">lineage: v1 ⟶ v2 (revised-into)</div>
+      </div>
+      <div class="ent">
+        <div class="name">Comment</div>
+        <ul><li><b>id</b> pk</li><li>decision_id · version_id</li><li>participant_id fk</li><li>anchor_quote (nullable)</li><li>body</li><li>created_at</li></ul>
+        <div class="rel">* ⟶ 1 Participant</div>
+      </div>
+      <div class="ent">
+        <div class="name">Participant</div>
+        <ul><li><b>id</b> pk</li><li>type human|agent|reviewer</li><li>name</li></ul>
+        <div class="rel">authors Comments &amp; VerdictEvents</div>
+      </div>
+      <div class="ent">
+        <div class="name">VerdictEvent</div>
+        <ul><li><b>id</b> pk</li><li>decision_id fk</li><li>from_state ⟶ to_state</li><li>participant_id</li><li><b>reason</b> (required on reject)</li><li>at</li></ul>
+        <div class="rel">state machine, append-only</div>
+      </div>
+      <div class="ent">
+        <div class="name">decisions_fts (FTS5)</div>
+        <ul><li>title · body · reason</li><li>synced by triggers</li></ul>
+        <div class="rel">powers search_decisions</div>
+      </div>
+    </div>
+    <p class="flow-note">Verdicts are an append-only event table, not a column update — the red-light history (including a rejection later revised into an approval) is never overwritten. <code>Decision.status</code> is a denormalized cache of the latest event.</p>
+<pre><code>-- core DDL sketch (full migrations in M1)
+CREATE TABLE decisions (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, session_id TEXT,
+  kind TEXT CHECK (kind IN ('plan','adr','prd','arch')),
+  title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+  source TEXT CHECK (source IN ('mcp','watcher')),
+  content_hash TEXT UNIQUE, pinned_commit TEXT,
+  created_at INTEGER NOT NULL, decided_at INTEGER
+);
+CREATE TABLE verdict_events (
+  id TEXT PRIMARY KEY, decision_id TEXT NOT NULL REFERENCES decisions(id),
+  from_state TEXT NOT NULL, to_state TEXT NOT NULL,
+  participant_id TEXT NOT NULL, reason TEXT, at INTEGER NOT NULL,
+  CHECK (to_state != 'rejected' OR reason IS NOT NULL)  -- red lights carry reasons
+);
+CREATE VIRTUAL TABLE decisions_fts USING fts5(title, body, reason);</code></pre>
+  </section>
+
+  <section id="components">
+    <h2><span class="sec">04</span>Component diagram</h2>
+    <div class="dwrap">
+      <p class="dtitle">librarian daemon — one process, port 7801 (localhost + Tailscale)</p>
+      <div class="comp">
+        <div class="row">
+          <div class="node">Claude Code / Codex / any agent<small>MCP over HTTP</small></div>
+          <div class="node">Web app<small>REST + SSE</small></div>
+          <div class="node">iOS app<small>REST + SSE via Tailscale</small></div>
+        </div>
+        <div class="arrows">▼ &nbsp;&nbsp;&nbsp; ▼ &nbsp;&nbsp;&nbsp; ▼</div>
+        <div class="daemon">
+          <div class="dl">librarian daemon (Node/TS)</div>
+          <div class="row">
+            <div class="node">MCP endpoint<small>/mcp · 5 tools</small></div>
+            <div class="node">REST + SSE<small>/api · verdicts, comments, library</small></div>
+            <div class="node">Watcher<small>chokidar · JSONL tail</small></div>
+          </div>
+          <div class="row">
+            <div class="node">Store<small>SQLite WAL + FTS5</small></div>
+            <div class="node">Notifier<small>ntfy publish</small></div>
+            <div class="node">Enrichment (P2)<small>rg subprocess</small></div>
+          </div>
+        </div>
+        <div class="arrows">▼ &nbsp;&nbsp;&nbsp; ▼</div>
+        <div class="row">
+          <div class="node">~/.claude/projects/**.jsonl<small>read-only tail</small></div>
+          <div class="node">ntfy.sh topic<small>push → phone</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="seq">
+    <h2><span class="sec">05</span>Sequence diagrams</h2>
+
+    <div class="dwrap">
+      <p class="dtitle">S1 · submit → notify → verdict (happy path)</p>
+      <div class="seq">
+        <div class="actors"><div><span>Agent</span></div><div><span>Daemon</span></div><div><span>Store</span></div><div><span>ntfy</span></div><div><span>iOS app</span></div></div>
+        <div class="body">
+          <div class="life" style="left:10%"></div><div class="life" style="left:30%"></div><div class="life" style="left:50%"></div><div class="life" style="left:70%"></div><div class="life" style="left:90%"></div>
+          <div class="msg"><span class="lbl" style="left:10%;width:20%">submit_for_review(doc)</span><span class="ln right" style="left:10%;width:20%"></span></div>
+          <div class="msg"><span class="lbl" style="left:30%;width:20%">INSERT decision v1 · pending</span><span class="ln right" style="left:30%;width:20%"></span></div>
+          <div class="msg"><span class="lbl" style="left:10%;width:20%">review_id</span><span class="ln dash left" style="left:10%;width:20%"></span></div>
+          <div class="msg"><span class="lbl" style="left:30%;width:40%">publish "pending: &lt;title&gt;"</span><span class="ln right" style="left:30%;width:40%"></span></div>
+          <div class="msg"><span class="lbl" style="left:70%;width:20%">push · deep-link</span><span class="ln right" style="left:70%;width:20%"></span></div>
+          <div class="msg"><span class="lbl" style="left:10%;width:20%">get_review(id, wait 50s) ⟳</span><span class="ln right" style="left:10%;width:20%"></span></div>
+          <div class="msg"><span class="lbl" style="left:30%;width:60%">POST /verdict approve (after reading)</span><span class="ln g left" style="left:30%;width:60%"></span></div>
+          <div class="msg"><span class="lbl" style="left:30%;width:20%">append VerdictEvent · status=approved</span><span class="ln g right" style="left:30%;width:20%"></span></div>
+          <div class="msg"><span class="lbl" style="left:10%;width:20%">{verdict, comments[]}</span><span class="ln dash g left" style="left:10%;width:20%"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dwrap">
+      <p class="dtitle">S2 · long-poll mechanics (ADR-B4)</p>
+      <div class="seq">
+        <div class="actors"><div><span>Agent</span></div><div><span>Daemon</span></div><div><span>Human</span></div></div>
+        <div class="body">
+          <div class="life" style="left:16.66%"></div><div class="life" style="left:50%"></div><div class="life" style="left:83.33%"></div>
+          <div class="msg"><span class="lbl" style="left:16.66%;width:33.33%">get_review(id, wait=50)</span><span class="ln right" style="left:16.66%;width:33.33%"></span></div>
+          <div class="noterow"><span class="note">daemon holds request ≤50s · no verdict arrives</span></div>
+          <div class="msg"><span class="lbl" style="left:16.66%;width:33.33%">{status: pending}</span><span class="ln dash left" style="left:16.66%;width:33.33%"></span></div>
+          <div class="selfmsg"><span class="box" style="left:16.66%">back off, re-poll</span></div>
+          <div class="msg"><span class="lbl" style="left:16.66%;width:33.33%">get_review(id, wait=50)</span><span class="ln right" style="left:16.66%;width:33.33%"></span></div>
+          <div class="msg"><span class="lbl" style="left:50%;width:33.33%">reject + reason (during hold)</span><span class="ln r left" style="left:50%;width:33.33%"></span></div>
+          <div class="msg"><span class="lbl" style="left:16.66%;width:33.33%">{rejected, reason, comments[]}</span><span class="ln dash r left" style="left:16.66%;width:33.33%"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dwrap">
+      <p class="dtitle">S3 · watcher auto-capture (ADR-B5)</p>
+      <div class="seq">
+        <div class="actors"><div><span>Claude Code</span></div><div><span>transcript .jsonl</span></div><div><span>Watcher</span></div><div><span>Store</span></div></div>
+        <div class="body">
+          <div class="life" style="left:12.5%"></div><div class="life" style="left:37.5%"></div><div class="life" style="left:62.5%"></div><div class="life" style="left:87.5%"></div>
+          <div class="msg"><span class="lbl" style="left:12.5%;width:25%">append: ExitPlanMode approved</span><span class="ln right" style="left:12.5%;width:25%"></span></div>
+          <div class="msg"><span class="lbl" style="left:37.5%;width:25%">fs change → read new lines</span><span class="ln right" style="left:37.5%;width:25%"></span></div>
+          <div class="selfmsg"><span class="box" style="left:62.5%">parse · classify · content_hash</span></div>
+          <div class="msg"><span class="lbl" style="left:62.5%;width:25%">upsert decision (source=watcher)</span><span class="ln right" style="left:62.5%;width:25%"></span></div>
+          <div class="msg"><span class="lbl" style="left:62.5%;width:25%">dedupe hit? merge, keep provenance</span><span class="ln dash left" style="left:62.5%;width:25%"></span></div>
+          <div class="noterow"><span class="note">SSE "decision.added" → library views refresh live</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dwrap">
+      <p class="dtitle">S4 · comment round-trip → revision v2</p>
+      <div class="seq">
+        <div class="actors"><div><span>Agent</span></div><div><span>Daemon</span></div><div><span>Store</span></div><div><span>iOS app</span></div></div>
+        <div class="body">
+          <div class="life" style="left:12.5%"></div><div class="life" style="left:37.5%"></div><div class="life" style="left:62.5%"></div><div class="life" style="left:87.5%"></div>
+          <div class="msg"><span class="lbl" style="left:37.5%;width:50%">POST comments[] + request-changes</span><span class="ln left" style="left:37.5%;width:50%"></span></div>
+          <div class="msg"><span class="lbl" style="left:37.5%;width:25%">save thread · state=changes_requested</span><span class="ln right" style="left:37.5%;width:25%"></span></div>
+          <div class="msg"><span class="lbl" style="left:12.5%;width:25%">get_review ⇒ {comments[], anchors}</span><span class="ln dash left" style="left:12.5%;width:25%"></span></div>
+          <div class="selfmsg"><span class="box" style="left:12.5%">revise design</span></div>
+          <div class="msg"><span class="lbl" style="left:12.5%;width:25%">submit_for_review(parent_review_id)</span><span class="ln right" style="left:12.5%;width:25%"></span></div>
+          <div class="msg"><span class="lbl" style="left:37.5%;width:25%">INSERT version v2 + lineage</span><span class="ln right" style="left:37.5%;width:25%"></span></div>
+          <div class="msg"><span class="lbl" style="left:37.5%;width:50%">push "v2 ready — diff available"</span><span class="ln g right" style="left:37.5%;width:50%"></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="api">
+    <h2><span class="sec">06</span>API surface</h2>
+    <h3>MCP tools (agents)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Tool</th><th>Behavior</th></tr>
+      <tr><td><code>submit_for_review</code></td><td>project, title, doc, kind, parent_review_id?, context_refs? → review_id. Creates pending Decision+Version, fires notify + SSE.</td></tr>
+      <tr><td><code>get_review</code></td><td>review_id, wait_seconds≤50 → {status} | {verdict, reason, comments[]}. Long-poll per ADR-B4.</td></tr>
+      <tr><td><code>record_decision</code></td><td>FYI tier: stores as approved/informational, no gate, no notify.</td></tr>
+      <tr><td><code>search_decisions</code></td><td>query, project?, filters (status·kind·date) → ranked FTS5 hits incl. rejections + reasons. The <em>mid-design lookup</em>: a specific question against the full archive.</td></tr>
+      <tr><td><code>get_constraints</code></td><td>project, topic? → bounded digest of accepted + rejected (with reasons), newest first. The <em>pre-design briefing</em>: queryless on purpose — agents can't search for constraints they don't know exist. Kept separate from search so tool descriptions teach distinct call moments.</td></tr>
+    </table></div>
+    <h3>REST + SSE (web &amp; iOS)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Endpoint</th><th>Purpose</th></tr>
+      <tr><td><code>GET /api/decisions</code></td><td>?status&amp;project&amp;kind&amp;q — library home / filters / search</td></tr>
+      <tr><td><code>GET /api/decisions/:id</code></td><td>full record: versions, comments, verdict history, pinned context</td></tr>
+      <tr><td><code>GET /api/decisions/:id/diff?from=1&amp;to=2</code></td><td>unified diff between versions</td></tr>
+      <tr><td><code>POST /api/decisions/:id/verdict</code></td><td>{to: approved|rejected, reason} — reason required on reject (schema-enforced)</td></tr>
+      <tr><td><code>POST /api/decisions/:id/comments</code></td><td>{body, anchor_quote?, version} — batch accepted as array</td></tr>
+      <tr><td><code>GET /api/sessions/:id</code> · <code>GET /api/projects</code></td><td>session view · project list with counts</td></tr>
+      <tr><td><code>GET /api/events</code></td><td>SSE: decision.added, decision.updated, verdict, comment</td></tr>
+    </table></div>
+  </section>
+
+  <section id="bdd">
+    <h2><span class="sec">07</span>BDD scenarios (acceptance = these pass)</h2>
+    <p class="flow-note">Run with cucumber-js against an in-process daemon, temp SQLite, and fixture transcript files. Tags map to milestones below.</p>
+<pre><code>Feature: Submit for review                                   @M2
+  Scenario: Agent submits a plan
+    Given the daemon is running with an empty store
+    When an agent calls submit_for_review with a plan for "accounting_app"
+    Then a decision exists with status "pending" and source "mcp"
+    And an SSE event "decision.added" is emitted
+    And a notification is published to the ntfy topic
+
+  Scenario: Revision links lineage                            @M4
+    Given a decision in state "changes_requested" with version 1
+    When the agent resubmits with parent_review_id
+    Then version 2 exists with parent_version_id = version 1
+    And GET /diff?from=1&amp;to=2 returns a non-empty unified diff
+
+Feature: Long-poll verdict delivery                           @M4
+  Scenario: Poll returns pending on hold expiry
+    Given a pending decision
+    When the agent calls get_review with wait_seconds 2
+    Then the call returns after ~2s with status "pending"
+
+  Scenario: Verdict arrives during hold
+    Given a pending decision and an in-flight get_review
+    When a human posts verdict "rejected" with reason "conflicts with ADR-004"
+    Then the in-flight call resolves with the verdict and the reason
+    And the decision's verdict_events contain pending → rejected
+
+  Scenario: Connection drops during hold — verdict is never lost
+    Given a pending decision and an in-flight get_review
+    When the connection drops before the hold expires
+    And a human posts verdict "approved" while no poll is connected
+    Then the verdict_event is persisted normally
+    When the agent reconnects and calls get_review again
+    Then the call returns immediately with the stored verdict
+    And repeated get_review calls return the same result (idempotent read)
+
+  Scenario: Daemon restarts while a review is pending
+    Given a pending decision with review_id "R"
+    When the daemon restarts
+    And the agent calls get_review with "R"
+    Then the call succeeds against the recovered store
+    And the decision is still listed as "pending" in the library
+
+Feature: Watcher auto-capture                                 @M5
+  Scenario: Approved plan is captured without agent cooperation
+    Given a fixture transcript receiving an approved ExitPlanMode entry
+    Then within 2s a decision exists with kind "plan" and source "watcher"
+    And its session external_ref points at the transcript
+
+  Scenario: Dedupe across ingestion paths
+    Given a decision submitted via MCP with content hash H
+    When the watcher captures a doc with the same hash H
+    Then exactly one decision exists, with both provenances recorded
+
+Feature: Red-light memory                                     @M3
+  Scenario: Rejections are first-class in search
+    Given a decision rejected with reason "overkill for single user"
+    When an agent calls search_decisions "microservices"
+    Then the hit includes status "rejected" and the reason verbatim
+
+  Scenario: Constraints digest
+    When an agent calls get_constraints for "accounting_app"
+    Then the digest lists accepted and rejected decisions with reasons
+
+Feature: Verdict API guards                                   @M4
+  Scenario: Reject without reason is refused
+    When a client posts verdict "rejected" with no reason
+    Then the API responds 422 and no verdict_event is written</code></pre>
+  </section>
+
+  <section id="milestones">
+    <h2><span class="sec">08</span>Milestones</h2>
+    <div class="tablewrap"><table>
+      <tr><th>#</th><th>Deliverable</th><th>Est.</th><th>Done when</th></tr>
+      <tr><td>M0</td><td>Scaffold: TS, vitest+cucumber-js, migrations runner, CI-less local check script</td><td>0.5d</td><td>bdd harness runs an empty feature</td></tr>
+      <tr><td>M1</td><td>Store: schema, migrations, FTS triggers, repository layer</td><td>1d</td><td>unit tests over DDL + dedupe hash</td></tr>
+      <tr><td>M2</td><td>MCP endpoint: submit_for_review, record_decision (+SSE, ntfy)</td><td>1d</td><td>@M2 scenarios green</td></tr>
+      <tr><td>M3</td><td>search_decisions, get_constraints, REST reads (library/session/project)</td><td>1d</td><td>@M3 green · web app has real data</td></tr>
+      <tr><td>M4</td><td>Verdict flow: long-poll, verdict/comment endpoints, lineage + diff</td><td>1.5d</td><td>@M4 green · S1, S2, S4 demoable end-to-end — the review loop closes here</td></tr>
+      <tr><td>M5</td><td>Watcher: JSONL tail, ExitPlanMode + docs/** capture, dedupe (safety net — can slip without blocking the core)</td><td>1.5d</td><td>@M5 green against fixture transcripts · S3 demoable</td></tr>
+      <tr><td>M6</td><td>Hardening: Tailscale bind + token auth, structured logs, seed script</td><td>1d</td><td>iOS app connects from phone; every remote verdict logged</td></tr>
+    </table></div>
+    <p class="flow-note">~7.5 focused days. M2+M3 unblock the web app; M4 closes the review loop (the core product); M5 is the capture safety net and can slip; M6 unblocks the iOS app. The riskiest unknown stays the spike from the PRD — agent convention reliability — testable the moment M2 is up, with this session as the first guinea pig.</p>
+  </section>
+
+  <section id="risks">
+    <h2><span class="sec">09</span>Risks &amp; mitigations</h2>
+    <ul>
+      <li><strong>Transcript format drift</strong> (watcher parses undocumented JSONL): keep extractors as small pure functions with fixture files per Claude Code version; a parse failure degrades to "unparsed event" — never crashes ingestion.</li>
+      <li><strong>Agent ignores the convention</strong>: watcher is the safety net for capture; enforcement hook (deny ExitPlanMode without review) stays in the Phase 2 drawer.</li>
+      <li><strong>Long-poll vs client timeouts / dropped connections</strong>: wait capped at 50s, configurable down; tool description advises backoff cadence. Connection loss is benign by construction — the poll is a stateless idempotent read; verdicts persist in SQLite regardless of who's connected, so the next poll (or a daemon restart) always recovers. Pinned by the @M4 reconnect scenarios.</li>
+      <li><strong>SQLite write contention</strong> (watcher + API): WAL + a single serialized writer queue in-process.</li>
+      <li><strong>Security</strong>: bind 127.0.0.1 + Tailscale interface only; bearer token for REST; reject-reason and every verdict logged append-only.</li>
+    </ul>
+  </section>
+
+  <footer>
+    LIBRARIAN · BACKEND PLAN V1 · 2026-07-12 · source: ~/Projects/librarian/docs/backend-plan.html<br>
+    companion docs: prd.md (product) · design-brief.md (web + iOS design handoff) · verdicts are append-only; red lights carry reasons
+  </footer>
+</div>
