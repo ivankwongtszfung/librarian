@@ -8,3 +8,5 @@ export { MemoryNotifier, NtfyNotifier } from './core/notifier.js';
 export type { Notifier, Notification } from './core/notifier.js';
 export { TranscriptWatcher } from './watcher/watcher.js';
 export * from './domain/types.js';
+export { waitForVerdict } from './wait.js';
+export type { WaitOptions, WaitResult } from './wait.js';

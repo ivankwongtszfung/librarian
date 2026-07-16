@@ -96,6 +96,9 @@ export interface ReviewOutcome {
     body: string;
     anchorQuote: string | null;
     author: string;
+    /** Who is speaking. The thread is multi-party: humans, agents, and
+     *  role-scoped reviewers all comment; only a human can decide. */
+    authorType: ParticipantType;
     createdAt: number;
   }>;
   version: number;

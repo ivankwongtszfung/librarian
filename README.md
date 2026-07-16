@@ -58,6 +58,15 @@ Add this to your agent's instruction file (`CLAUDE.md`, `AGENTS.md`) to close th
 | `get_review(review_id, wait_seconds)` | Waits for your verdict (server-side long-poll, ≤50s per call). Resolves to `approved`, `rejected` + reason, or `changes_requested` + your comments. |
 | `record_decision(…)` | Files a decision that needs no approval. Doesn't gate, doesn't notify. |
 
+For reviews that may take a while, an agent shouldn't sit in a polling loop — it can run
+
+```bash
+librarian wait <review_id> --timeout 2h   # exit 0 = resolved (verdict JSON on stdout),
+                                          # exit 1 = error, exit 2 = still pending
+```
+
+as a **background process** and end its turn: the process holds the long-poll (reconnecting through daemon restarts), and its exit is what wakes the agent's harness with the verdict. Zero tokens are spent waiting.
+
 ## How a decision flows
 
 1. An agent finishes a design and calls `submit_for_review`.

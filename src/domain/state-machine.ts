@@ -3,7 +3,7 @@ import type { DecisionStatus } from './types.js';
 export class VerdictError extends Error {
   constructor(
     message: string,
-    readonly code: 'invalid_transition' | 'reason_required',
+    readonly code: 'invalid_transition' | 'reason_required' | 'not_authorized',
   ) {
     super(message);
     this.name = 'VerdictError';

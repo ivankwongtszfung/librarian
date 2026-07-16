@@ -8,3 +8,6 @@ dist/
 coverage/
 *.log
 .librarian/
+
+# Local project-state dashboard (personal; may hold private links)
+state.html

@@ -1,3 +1,4 @@
+import { type ChildProcess, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +31,14 @@ export class LibrarianWorld extends World {
   inFlightAbort?: AbortController;
   pollStartedAt?: number;
 
+  /** Kept across restarts so a waiter pointed at the old URL can reconnect —
+   *  in production the daemon always comes back on its configured port. */
+  port?: number;
+  waiter?: ChildProcess;
+  waiterStdout = '';
+  waiterStderr = '';
+  waiterExit?: Promise<number | null>;
+
   async boot(): Promise<void> {
     this.tmpDir = mkdtempSync(join(tmpdir(), 'librarian-bdd-'));
     this.dbPath = join(this.tmpDir, 'test.db');
@@ -41,20 +50,91 @@ export class LibrarianWorld extends World {
   async start(): Promise<void> {
     this.daemon = await startDaemon({
       dbPath: this.dbPath,
-      port: 0,
+      port: this.port ?? 0,
       notifier: this.notifier,
       watchDir: this.watchDir,
       publicDir: undefined,
     });
+    this.port = Number(new URL(this.daemon.baseUrl).port);
     this.daemon.bus.on('event', (e: LibrarianEvent) => this.events.push(e));
+    await this.waitForHealth();
     await this.connectClient();
   }
 
-  /** A fresh agent connection to the daemon that is already running. */
+  /** After a same-port restart, undici's keep-alive pool still holds sockets
+   *  the old daemon force-closed; requests fail until the dead ones are
+   *  evicted. Production clients (the wait CLI, agents) already retry — the
+   *  test world has to as well. */
+  private async waitForHealth(timeoutMs = 3000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`${this.baseUrl}/api/health`);
+        if (res.ok) return;
+      } catch {
+        /* stale pooled socket — retrying evicts it */
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error('daemon did not become healthy after start');
+  }
+
+  /** Spawn the real CLI as a real child process — the exit-is-the-notification
+   *  contract can only be tested from outside. */
+  async startWaiter(reviewId: string, timeoutSeconds: number): Promise<void> {
+    this.waiterStdout = '';
+    this.waiterStderr = '';
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        'src/cli.ts',
+        'wait',
+        reviewId,
+        '--url',
+        this.baseUrl,
+        '--timeout',
+        `${timeoutSeconds}s`,
+      ],
+      { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    child.stdout.on('data', (d: Buffer) => {
+      this.waiterStdout += d.toString();
+    });
+    child.stderr.on('data', (d: Buffer) => {
+      this.waiterStderr += d.toString();
+    });
+    this.waiter = child;
+    this.waiterExit = new Promise((resolve) => child.on('exit', (code) => resolve(code)));
+
+    // Don't hand control back until the waiter is actually holding — the
+    // scenarios race a verdict against it, and a verdict that lands before the
+    // first poll must still be seen (idempotent read), but the "wakes on the
+    // verdict" timing assertions need the hold to be established.
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && !this.waiterStderr.includes('holding for verdict')) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+
+  /** A fresh agent connection to the daemon that is already running. Retries
+   *  because the shared fetch pool may hand it one more dead socket even after
+   *  waitForHealth has succeeded. */
   async connectClient(): Promise<void> {
-    const transport = new StreamableHTTPClientTransport(new URL(`${this.baseUrl}/mcp`));
-    this.client = new Client({ name: 'bdd-agent', version: '1.0.0' });
-    await this.client.connect(transport);
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const transport = new StreamableHTTPClientTransport(new URL(`${this.baseUrl}/mcp`));
+        this.client = new Client({ name: 'bdd-agent', version: '1.0.0' });
+        await this.client.connect(transport);
+        return;
+      } catch (err) {
+        lastErr = err;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    throw lastErr;
   }
 
   get baseUrl(): string {
@@ -99,6 +179,11 @@ export class LibrarianWorld extends World {
   }
 
   async destroy(): Promise<void> {
+    if (this.waiter && this.waiter.exitCode === null) {
+      this.waiter.kill('SIGKILL');
+      await this.waiterExit;
+    }
+    this.waiter = undefined;
     await this.shutdown();
     if (this.tmpDir) rmSync(this.tmpDir, { recursive: true, force: true });
   }

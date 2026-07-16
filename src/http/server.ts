@@ -88,6 +88,32 @@ export function createApp(opts: HttpOptions): express.Express {
     res.json({ ...detail, thread: outcome?.comments ?? [] });
   });
 
+  // REST twin of the MCP get_review tool, for non-agent clients (the wait CLI,
+  // the Discord bridge). Holds server-side like the tool does; the hold is
+  // released early if the client goes away, so an abandoned waiter never pins
+  // the event bus.
+  app.get('/api/decisions/:id/review', async (req: Request, res: Response) => {
+    const raw = Number(req.query.wait_seconds);
+    const waitSeconds = Number.isFinite(raw) && raw > 0 ? raw : 0;
+    const abort = new AbortController();
+    req.on('close', () => abort.abort());
+    try {
+      const outcome = await reviews.getReview(req.params.id, waitSeconds, abort.signal);
+      if (res.writableEnded || abort.signal.aborted) return;
+      if ('error' in outcome) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      res.json(outcome);
+    } catch (err) {
+      // An async throw here would otherwise become an unhandled rejection and
+      // take the daemon down with it.
+      if (!res.writableEnded && !abort.signal.aborted) {
+        res.status(500).json({ error: 'internal', detail: String(err) });
+      }
+    }
+  });
+
   app.get('/api/decisions/:id/diff', (req: Request, res: Response) => {
     const from = Number(req.query.from ?? 1);
     const to = Number(req.query.to ?? 2);

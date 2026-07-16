@@ -1,5 +1,11 @@
+import { VerdictError } from '../domain/state-machine.js';
 import { isResolved } from '../domain/types.js';
-import type { DecisionKind, DecisionStatus, ReviewOutcome } from '../domain/types.js';
+import type {
+  DecisionKind,
+  DecisionStatus,
+  ParticipantType,
+  ReviewOutcome,
+} from '../domain/types.js';
 import type { Repository, SubmitInput } from '../store/repository.js';
 import { unifiedDiff } from '../util/diff.js';
 import type { EventBus } from './events.js';
@@ -140,6 +146,10 @@ export class ReviewService {
       signal?.addEventListener('abort', finish, { once: true });
     });
 
+    // An aborted hold means the caller is gone and the result is discarded —
+    // and during shutdown the store may already be closed. Don't touch it.
+    if (signal?.aborted) return outcome;
+
     const settledOutcome = this.repo.reviewOutcome(reviewId)!;
     if (isResolved(settledOutcome.status)) this.repo.markCommentsDelivered(reviewId);
     return settledOutcome;
@@ -168,14 +178,31 @@ export class ReviewService {
     return { ok: true };
   }
 
+  /**
+   * Add to a decision's conversation.
+   *
+   * The thread is multi-party on purpose — the decision, not the chat, is the
+   * unit of work, and its comments (human, agent, or role-scoped reviewer) are
+   * what make it a rationale rather than a verdict slip. But commenting and
+   * deciding are different powers: `requestChanges` is a verdict transition,
+   * so only a human may pass it. Callers on the agent path must not.
+   */
   postComments(input: {
     decisionId: string;
     comments: Array<{ body: string; anchorQuote?: string | null; versionNum?: number }>;
     by?: string;
+    /** Who is speaking. Defaults to the human — the web UI and REST clients. */
+    authorType?: ParticipantType;
     requestChanges?: boolean;
     reason?: string;
   }): { added: number } {
-    const participant = this.repo.upsertParticipant('human', input.by ?? 'you');
+    const authorType = input.authorType ?? 'human';
+    if (input.requestChanges && authorType !== 'human') {
+      // Verdict authority is the human's alone. A non-human caller asking for
+      // changes is trying to decide, not to comment.
+      throw new VerdictError('only a human may transition a verdict', 'not_authorized');
+    }
+    const participant = this.repo.upsertParticipant(authorType, input.by ?? 'you');
     const added = this.repo.addComments(input.decisionId, participant, input.comments);
 
     this.bus.emitEvent({

@@ -91,7 +91,9 @@ export function createMcpServer(repo: Repository, reviews: ReviewService): McpSe
         'wait_seconds (max 50) and returns as soon as the human decides. If it returns status ' +
         '"pending", simply call it again — this is safe and cheap; do not spin in a tight loop, and ' +
         'do not assume approval. Returns "approved" (proceed), "rejected" (stop; reason given), or ' +
-        '"changes_requested" (read comments, revise, resubmit with parent_review_id).',
+        '"changes_requested" (read comments, revise, resubmit with parent_review_id). ' +
+        'If the review may take a while, run `librarian wait <review_id>` as a background process ' +
+        'instead of polling — it exits with the verdict JSON, and the exit wakes your harness.',
       inputSchema: {
         review_id: z.string(),
         wait_seconds: z
@@ -122,6 +124,54 @@ export function createMcpServer(repo: Repository, reviews: ReviewService): McpSe
             }
           : {}),
       });
+    },
+  );
+
+  server.registerTool(
+    'comment_on_decision',
+    {
+      title: 'Join the conversation on a decision',
+      description:
+        'Add a comment to a decision — a critique, a question, a cited precedent, a risk. ' +
+        'The decision (not the chat) is the unit of work here, and its thread is its rationale: ' +
+        'everything said about it is stored on it, forever, and read by the human before they decide ' +
+        'and by every agent that queries it afterwards. ' +
+        'Anchor the comment to a passage with anchor_quote when you are responding to a specific claim. ' +
+        'This does NOT decide anything: only the human can approve, reject, or request changes. ' +
+        'Reviewing on behalf of a role (security, architecture, cost, consistency with past decisions)? ' +
+        'Pass that role as `as` so the human can see which lens is speaking.',
+      inputSchema: {
+        review_id: z.string().describe('The decision to comment on'),
+        body: z
+          .string()
+          .describe('The comment itself. Be specific; cite the doc or prior decisions.'),
+        anchor_quote: z
+          .string()
+          .optional()
+          .describe('A verbatim passage from the doc that this comment is about'),
+        as: z
+          .string()
+          .optional()
+          .describe('The reviewer role you are speaking as, e.g. "security", "librarian"'),
+      },
+    },
+    async (args) => {
+      try {
+        const result = reviews.postComments({
+          decisionId: args.review_id,
+          comments: [{ body: args.body, anchorQuote: args.anchor_quote ?? null }],
+          by: args.as ?? 'agent',
+          // A role-scoped critic is a 'reviewer'; an agent speaking for itself is an 'agent'.
+          authorType: args.as ? 'reviewer' : 'agent',
+        });
+        return text({
+          ok: true,
+          added: result.added,
+          note: 'Comment stored on the decision. The human decides; you do not.',
+        });
+      } catch {
+        return text({ error: 'not_found', review_id: args.review_id });
+      }
     },
   );
 

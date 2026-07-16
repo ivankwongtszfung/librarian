@@ -564,14 +564,16 @@ export class Repository {
     const lastVerdict = this.listVerdicts(decisionId).at(-1) ?? null;
     const comments = this.listComments(decisionId).map((c) => {
       const author = this.db
-        .prepare('SELECT name FROM participants WHERE id = ?')
+        .prepare('SELECT name, type FROM participants WHERE id = ?')
         .get(c.participantId) as {
         name: string;
+        type: ParticipantType;
       };
       return {
         body: c.body,
         anchorQuote: c.anchorQuote,
         author: author.name,
+        authorType: author.type,
         createdAt: c.createdAt,
       };
     });
