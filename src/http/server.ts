@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { EventBus } from '../core/events.js';
@@ -11,7 +12,8 @@ export interface HttpOptions {
   repo: Repository;
   reviews: ReviewService;
   bus: EventBus;
-  /** When set, every /api request must present it as a bearer token. */
+  /** When set, every /api AND /mcp request must present it — as an
+   *  `Authorization: Bearer` header or the `librarian_token` cookie. */
   token?: string;
   publicDir?: string;
 }
@@ -21,11 +23,48 @@ export function createApp(opts: HttpOptions): express.Express {
   const app = express();
   app.use(express.json({ limit: '8mb' }));
 
+  // ---------- auth ----------
+  // The token authorizes a request regardless of which interface it arrived on,
+  // so the SAME gate guards both /mcp and /api. A tunnel makes "localhost-only
+  // by binding" false — cloudflared connects from loopback, so an ungated /mcp
+  // would be world-readable the moment the daemon is exposed. The token is read
+  // from the Authorization header or an HttpOnly cookie, never the query string,
+  // which would leak into proxy logs, Referer headers, and notification URLs.
+  const configuredDigest = opts.token ? sha256(opts.token) : null;
+  function requireAuth(req: Request, res: Response, next: NextFunction): void {
+    if (!configuredDigest) {
+      next(); // no token configured: loopback-only mode
+      return;
+    }
+    const header = req.header('authorization') ?? '';
+    const presented = header.startsWith('Bearer ')
+      ? header.slice(7)
+      : readCookie(req, 'librarian_token');
+    // Constant-time: hash both sides to a fixed 32 bytes so neither the compare
+    // nor the length leaks via timing.
+    if (!presented || !timingSafeEqual(sha256(presented), configuredDigest)) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    // Bootstrap the browser stream: once a caller proves the token via header,
+    // hand back an HttpOnly cookie so EventSource — which cannot set headers —
+    // can authenticate on later requests without the token ever touching a URL.
+    if (header) {
+      res.cookie('librarian_token', opts.token as string, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: req.secure || req.header('x-forwarded-proto') === 'https',
+        path: '/',
+      });
+    }
+    next();
+  }
+
   // ---------- MCP ----------
   // Stateless: a fresh server + transport per request. All state lives in
   // SQLite, so there is nothing to keep in memory between calls — and a daemon
   // restart cannot strand a connected agent.
-  app.post('/mcp', async (req: Request, res: Response) => {
+  app.post('/mcp', requireAuth, async (req: Request, res: Response) => {
     const server = createMcpServer(repo, reviews);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => {
@@ -45,20 +84,9 @@ export function createApp(opts: HttpOptions): express.Express {
   app.get('/mcp', methodNotAllowed);
   app.delete('/mcp', methodNotAllowed);
 
-  // ---------- auth (API only; MCP is localhost-only by binding) ----------
-  // Transport-agnostic on purpose: the token is what authorizes a request, not
-  // the interface it arrived on. That keeps LAN, Tailscale, and a future relay
-  // interchangeable without touching this layer.
-  app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-    if (!opts.token) return next();
-    const header = req.header('authorization') ?? '';
-    const presented = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
-    if (presented !== opts.token) {
-      res.status(401).json({ error: 'unauthorized' });
-      return;
-    }
-    next();
-  });
+  // Every /api surface — reads, writes, and the SSE stream — sits behind the
+  // same gate defined above.
+  app.use('/api', requireAuth);
 
   // ---------- reads ----------
   app.get('/api/decisions', (req: Request, res: Response) => {
@@ -227,4 +255,21 @@ export function createApp(opts: HttpOptions): express.Express {
   }
 
   return app;
+}
+
+function sha256(value: string): Buffer {
+  return createHash('sha256').update(value).digest();
+}
+
+// The token never rides the query string, so it can only arrive by header or
+// cookie. Parse the Cookie header by hand to avoid a parser dependency.
+function readCookie(req: Request, name: string): string | undefined {
+  const raw = req.headers.cookie;
+  if (!raw) return undefined;
+  for (const part of raw.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return undefined;
 }

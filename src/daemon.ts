@@ -36,14 +36,30 @@ export interface Daemon {
 
 const DEFAULT_PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
+/** Loopback addresses need no token; anything else is reachable by others. */
+function isLoopback(host: string): boolean {
+  return (
+    host === 'localhost' || host === '::1' || host === '::ffff:127.0.0.1' || host.startsWith('127.')
+  );
+}
+
 export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
+  const host = opts.host ?? '127.0.0.1';
+  // An exposed daemon must require auth. Refuse to even start bound to anything
+  // but loopback without a token — the dangerous configuration is made
+  // impossible rather than merely discouraged. (Threat model F3.)
+  if (!isLoopback(host) && !opts.token) {
+    throw new Error(
+      `librarian: refusing to bind to non-loopback address "${host}" without a token. A LAN- or internet-reachable daemon must require auth — pass a token, or bind to 127.0.0.1.`,
+    );
+  }
+
   const db = openDb(opts.dbPath);
   const repo = new Repository(db);
   const bus = new EventBus();
   const notifier =
     opts.notifier ?? (opts.ntfyTopic ? new NtfyNotifier(opts.ntfyTopic) : new MemoryNotifier());
 
-  const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 7801;
   const baseUrl = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
 
