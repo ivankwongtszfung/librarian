@@ -2,6 +2,50 @@
 
 **Status:** proposed · **Date:** 2026-07-17 · **Project:** librarian
 
+## Goal
+
+Make it so a human can review and decide on a decision from **any of their
+devices**, and the agent acts on it — **without losing a verdict**, **without a
+decision's content ever being readable off the user's machine**, and **without
+the user having to run or trust a service**.
+
+We know it works when this passes, end to end — the sleeping-machine test:
+
+> An agent submits a decision from my laptop while I'm out. My phone shows it and
+> buzzes. I read it and reject it with a reason. My laptop was asleep the entire
+> time. When it wakes, the agent receives the rejection and revises — no verdict
+> was lost, and nothing readable about the decision ever sat on a server.
+
+Success is five properties, each independently testable:
+
+1. **Reach** — I can act on a pending decision from a device that is not the dev
+   machine.
+2. **Losslessness** — no verdict or comment is ever lost across a dropped
+   connection, a daemon restart, or a sleeping machine; the outcome is always
+   reconstructable from committed local rows.
+3. **Privacy & integrity** — the mailbox operator, and anyone in the middle, only
+   ever sees ciphertext (cannot read a decision), *and* cannot forge a verdict:
+   an inbox entry is applied only if it authenticates under the user's key, bound
+   to a decision + version. (The forge half depends on ADR-004.)
+4. **No service dependence for correctness** — the mailbox being slow or down
+   costs latency, never a decision; the record lives only on the user's disk.
+5. **Agent action** — approve makes the agent proceed, reject (reason required)
+   makes it stop or revise, a comment gets addressed. The verdict is a *signal*
+   to a session that already holds the context.
+
+Responsiveness is a sixth quality — the phone should reflect a pending decision
+promptly — but its target latency is a tuning number still open (see below), not
+a pass/fail line for "does it work."
+
+**In scope for this goal (Phase 1):** the human↔agent approve / reject / comment
+loop across devices, over the local channel and the encrypted mailbox, for a
+single user (per-user isolated). **Out (Phase 2):** the multi-role reviewer panel
+and codebase-memory grounding.
+
+**Done when:** the sleeping-machine scenario passes as an automated end-to-end
+test, each of the five properties has a guarding test, and a second device can be
+paired and revoked.
+
 ## Context
 
 An agent on the user's machine submits a design and blocks on `get_review`
