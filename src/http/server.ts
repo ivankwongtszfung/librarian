@@ -3,13 +3,13 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { EventBus } from '../core/events.js';
 import type { ReviewService } from '../core/review-service.js';
+import type { DecisionStore } from '../domain/ports.js';
 import { VerdictError } from '../domain/state-machine.js';
 import type { DecisionKind, DecisionStatus } from '../domain/types.js';
 import { createMcpServer } from '../mcp/server.js';
-import type { Repository } from '../store/repository.js';
 
 export interface HttpOptions {
-  repo: Repository;
+  repo: DecisionStore;
   reviews: ReviewService;
   bus: EventBus;
   /** When set, every /api AND /mcp request must present it — as an

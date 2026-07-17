@@ -131,3 +131,39 @@ export interface SearchFilters {
   until?: number;
   limit?: number;
 }
+
+export interface SubmitInput {
+  project: string;
+  title: string;
+  body: string;
+  kind: DecisionKind;
+  source: Source;
+  agent?: string;
+  sessionRef?: string;
+  parentDecisionId?: string;
+  contextRefs?: string[];
+  pinnedCommit?: string;
+  /** record_decision stores an already-settled entry; submit_for_review gates. */
+  initialStatus?: DecisionStatus;
+}
+
+export interface SubmitResult {
+  decision: Decision;
+  version: Version;
+  /** True when an existing decision with the same content was found and merged. */
+  deduped: boolean;
+}
+
+export interface ConstraintItem {
+  title: string;
+  kind: DecisionKind;
+  decidedAt: number | null;
+  reason: string | null;
+}
+
+/** The standing-constraints digest: what is approved and what is a red light. */
+export interface Constraints {
+  project: string;
+  accepted: ConstraintItem[];
+  rejected: ConstraintItem[];
+}

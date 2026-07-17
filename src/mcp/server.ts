@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { MAX_WAIT_SECONDS, type ReviewService } from '../core/review-service.js';
+import type { DecisionStore } from '../domain/ports.js';
 import type { DecisionKind, DecisionStatus } from '../domain/types.js';
-import type { Repository } from '../store/repository.js';
 
 const KIND = z.enum(['plan', 'adr', 'prd', 'arch']);
 const STATUS = z.enum(['pending', 'changes_requested', 'approved', 'rejected', 'superseded']);
@@ -18,7 +18,7 @@ function text(payload: unknown) {
  * only place an agent learns *when* to call each tool, and the whole
  * feed-forward loop depends on agents consulting constraints before designing.
  */
-export function createMcpServer(repo: Repository, reviews: ReviewService): McpServer {
+export function createMcpServer(repo: DecisionStore, reviews: ReviewService): McpServer {
   const server = new McpServer(
     { name: 'librarian', version: '0.1.0' },
     {
