@@ -1,3 +1,4 @@
+import type { DecisionStore } from '../domain/ports.js';
 import { assertTransition } from '../domain/state-machine.js';
 import type {
   Comment,
@@ -13,6 +14,8 @@ import type {
   SearchHit,
   Session,
   Source,
+  SubmitInput,
+  SubmitResult,
   VerdictEvent,
   Version,
 } from '../domain/types.js';
@@ -33,29 +36,10 @@ interface DecisionRow {
   decided_at: number | null;
 }
 
-export interface SubmitInput {
-  project: string;
-  title: string;
-  body: string;
-  kind: DecisionKind;
-  source: Source;
-  agent?: string;
-  sessionRef?: string;
-  parentDecisionId?: string;
-  contextRefs?: string[];
-  pinnedCommit?: string;
-  /** record_decision stores an already-settled entry; submit_for_review gates. */
-  initialStatus?: DecisionStatus;
-}
+// SubmitInput / SubmitResult moved to domain/types.ts so the DecisionStore port
+// can reference them without the domain depending on this store.
 
-export interface SubmitResult {
-  decision: Decision;
-  version: Version;
-  /** True when an existing decision with the same content was found and merged. */
-  deduped: boolean;
-}
-
-export class Repository {
+export class Repository implements DecisionStore {
   constructor(private readonly db: Db) {}
 
   // ---------- projects, sessions, participants ----------

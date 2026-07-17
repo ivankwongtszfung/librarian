@@ -3,7 +3,7 @@ import { basename, dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 import chokidar, { type FSWatcher } from 'chokidar';
 import type { EventBus } from '../core/events.js';
-import type { Repository } from '../store/repository.js';
+import type { DecisionStore } from '../domain/ports.js';
 import {
   type CapturedDoc,
   type Line as TranscriptLine,
@@ -45,7 +45,7 @@ export class TranscriptWatcher {
 
   constructor(
     private readonly rootDir: string,
-    private readonly repo: Repository,
+    private readonly repo: DecisionStore,
     private readonly bus: EventBus,
     /** Capture only what arrives after start; the backlog is a separate concern. */
     private readonly fromBeginning = false,

@@ -1,3 +1,4 @@
+import type { DecisionStore } from '../domain/ports.js';
 import { VerdictError } from '../domain/state-machine.js';
 import { isResolved } from '../domain/types.js';
 import type {
@@ -6,7 +7,6 @@ import type {
   ParticipantType,
   ReviewOutcome,
 } from '../domain/types.js';
-import type { Repository, SubmitInput } from '../store/repository.js';
 import { unifiedDiff } from '../util/diff.js';
 import type { EventBus } from './events.js';
 import type { Notifier } from './notifier.js';
@@ -31,7 +31,7 @@ export interface SubmitForReviewInput {
  */
 export class ReviewService {
   constructor(
-    private readonly repo: Repository,
+    private readonly repo: DecisionStore,
     private readonly bus: EventBus,
     private readonly notifier: Notifier,
     private readonly baseUrl = 'http://127.0.0.1:7801',
