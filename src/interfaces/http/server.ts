@@ -218,6 +218,14 @@ export function createApp(opts: HttpOptions): express.Express {
     res.json({ ok: true, roots: roots.size, files, known, imported });
   });
 
+  // The "Catch me up" button: generate a project's briefing live from the
+  // store, in the project-state standard's shape (RIGHT NOW / critical / key
+  // decisions with their real why / activity). Computed at click time, so it is
+  // never stale — no hand-maintained state.html to drift.
+  app.get('/api/projects/:name/catchup', (req: Request, res: Response) => {
+    res.json(repo.projectCatchup(req.params.name));
+  });
+
   app.get('/api/sessions/:id', (req: Request, res: Response) => {
     res.json({ sessionId: req.params.id, decisions: repo.getSessionDecisions(req.params.id) });
   });

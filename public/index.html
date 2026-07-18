@@ -168,6 +168,38 @@
   .chat button { font-family: var(--sans); font-weight: 600; font-size: 0.85rem; background: var(--green); color: #fff; border: 1px solid var(--green); border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; }
   .chat .st { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 6rem; text-align: right; }
   .chat .st.ok { color: var(--green-ink); }
+
+  /* generated catchup briefing (the "Catch me up" button) */
+  .cu-go { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.03em; text-transform: uppercase;
+           color: var(--green-ink); background: var(--green-soft); border: 1px solid var(--green);
+           border-radius: 999px; padding: 0.2rem 0.6rem; cursor: pointer; margin-left: 0.4rem; }
+  .cu-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; margin: 0 0 1rem; }
+  .cu-head h1 { font-size: 1.4rem; margin: 0; }
+  .cu-head .gen { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+  .cu-actions { margin-left: auto; display: flex; gap: 0.4rem; }
+  .cu-actions button, .cu-actions a { font-family: var(--mono); font-size: 0.7rem; padding: 0.3rem 0.65rem;
+           border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted);
+           cursor: pointer; text-decoration: none; }
+  .cu-now { border: 1px solid var(--amber); background: var(--amber-soft); border-radius: 12px;
+            padding: 0.85rem 1.1rem; margin: 0 0 1rem; font-size: 0.95rem; }
+  .cu-now.calm { border-color: var(--green); background: var(--green-soft); }
+  .cu-sec { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase;
+            color: var(--muted); margin: 1.4rem 0 0.55rem; }
+  .cu-crit { border: 1px solid var(--red); background: var(--red-soft); border-radius: 12px; overflow: hidden; }
+  .cu-row { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--line); }
+  .cu-row:last-child { border-bottom: 0; }
+  .cu-row .main { flex: 1; }
+  .cu-row a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  .cu-row a:hover { text-decoration: underline; }
+  .cu-row .why { display: block; color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
+  .cu-chip { font-family: var(--mono); font-size: 0.58rem; text-transform: uppercase; padding: 0.15rem 0.45rem;
+             border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .cu-chip.pending, .cu-chip.changes_requested { border-color: var(--amber); color: var(--amber); }
+  .cu-chip.rejected { border-color: var(--red); color: var(--red); }
+  .cu-chip.approved { border-color: var(--green); color: var(--green-ink); }
+  .cu-log { font-family: var(--mono); font-size: 0.75rem; }
+  .cu-log .e { display: flex; gap: 0.7rem; padding: 0.28rem 0; color: var(--muted); }
+  .cu-log .dt { min-width: 3.4rem; opacity: 0.75; }
 </style>
 </head>
 <body>
@@ -360,10 +392,64 @@ async function renderLibrary(project) {
     : '';
 
   app.innerHTML =
-    (project ? `<div class="section-title">project catchup · ${esc(project)} — <a href="/index.html" style="color:inherit">all projects</a></div>${strip}` : '') +
+    (project ? `<div class="section-title">project catchup · ${esc(project)} — <a href="/index.html" style="color:inherit">all projects</a><button class="cu-go" data-p="${esc(project)}" onclick="catchup(this.dataset.p)">⚡ Catch me up</button></div>${strip}` : '') +
     (needsYou.length && !q ? `<div class="section-title">Needs you — ${needsYou.length}</div>${needsYou.map(card).join('')}` : '') +
     (rest.length ? `<div class="section-title">${q ? 'Results' : project ? `${esc(project)} — decisions` : 'Library'}</div>${rest.map(card).join('')}` : '') +
     (q && needsYou.length ? needsYou.map(card).join('') : '');
+}
+
+// The "Catch me up" button: a briefing generated live from the store, in the
+// project-state standard's shape. Regenerated on every click and on live
+// events, so it is never stale.
+window.catchup = (project) => {
+  history.pushState({}, '', `/p/${encodeURIComponent(project)}?catchup=1`);
+  renderCatchup(project);
+};
+
+async function renderCatchup(project) {
+  pageCtx = { view: 'catchup', project };
+  if (!app.querySelector('.cu-head')) app.innerHTML = '<p class="empty">Generating…</p>';
+  const { body: c, status } = await api(`/projects/${encodeURIComponent(project)}/catchup`);
+  if (status !== 200) { app.innerHTML = '<p class="empty">Could not generate a catchup.</p>'; return; }
+  const s = c.stats;
+
+  const item = (d) => `<div class="cu-row">
+    <span class="cu-chip ${d.status}">${esc(d.status.replace('_', ' '))}</span>
+    <div class="main">
+      <a href="/d/${d.id}">${esc(d.title)}</a>
+      ${d.reason ? `<span class="why">✏️ ${esc(d.reason)}</span>`
+        : d.tldr ? `<span class="why">${esc(d.tldr)}</span>` : ''}
+    </div>
+    <span class="cu-chip">${esc(d.kind)}</span>
+  </div>`;
+
+  const nowLine = c.rightNow.length
+    ? `<b>${c.rightNow.length} waiting on you.</b> Start with “${esc(c.rightNow[0].title)}”.`
+    : '<b>Nothing waiting on you</b> — the review queue is clear.';
+
+  app.innerHTML = `
+    <div class="cu-head">
+      <h1>${esc(project)} — catchup</h1>
+      <span class="gen">generated ${new Date(c.generatedAt).toLocaleString()}</span>
+      <span class="cu-actions">
+        <button data-p="${esc(project)}" onclick="renderCatchup(this.dataset.p)">⟳ regenerate</button>
+        <button onclick="window.print()">⎙ save</button>
+        <a href="/p/${encodeURIComponent(project)}">← decisions</a>
+      </span>
+    </div>
+    <div class="topline">
+      <div class="stat ${s.needsYou ? 'hot' : ''}"><b>${s.needsYou}</b><small>needs you</small></div>
+      <div class="stat ${s.redLights ? 'bad' : ''}"><b>${s.redLights}</b><small>red lights</small></div>
+      ${s.bugs ? `<div class="stat bad"><b>${s.bugs}</b><small>bugs</small></div>` : ''}
+      <div class="stat"><b>${s.decisions}</b><small>decisions</small></div>
+      ${s.lastActivity ? `<div class="stat"><b>${when(s.lastActivity)}</b><small>last activity</small></div>` : ''}
+    </div>
+    <div class="cu-now ${c.rightNow.length ? '' : 'calm'}">${nowLine}</div>
+    ${c.rightNow.length ? `<div class="cu-sec">Right now — waiting on you</div>${c.rightNow.map(item).join('')}` : ''}
+    ${c.critical.length ? `<div class="cu-sec">🔴 Critical — red lights &amp; open bugs</div><div class="cu-crit">${c.critical.map(item).join('')}</div>` : ''}
+    ${c.keyDecisions.length ? `<div class="cu-sec">Key decisions &amp; why</div>${c.keyDecisions.map(item).join('')}` : ''}
+    ${c.activity.length ? `<div class="cu-sec">Activity</div><div class="cu-log">${c.activity.map((a) => `<div class="e"><span class="dt">${when(a.at)}</span><span>${esc(a.label)} · <a href="/d/${a.id}" style="color:inherit">${esc(a.title)}</a></span></div>`).join('')}</div>` : ''}
+  `;
 }
 
 async function renderDecision(id) {
@@ -498,7 +584,13 @@ function render() {
   const d = /^\/d\/(.+)$/.exec(location.pathname);
   if (d) { renderDecision(d[1]); return; }
   const p = /^\/p\/([^/]+)$/.exec(location.pathname);
-  renderLibrary(p ? decodeURIComponent(p[1]) : undefined);
+  if (p) {
+    const project = decodeURIComponent(p[1]);
+    if (new URLSearchParams(location.search).get('catchup')) { renderCatchup(project); return; }
+    renderLibrary(project);
+    return;
+  }
+  renderLibrary();
 }
 
 qBox.addEventListener('input', () => { if (!location.pathname.startsWith('/d/')) render(); });

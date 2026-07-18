@@ -95,6 +95,7 @@
   details.project{border:1px solid var(--line);border-radius:11px;background:var(--panel);margin-bottom:9px;padding:0}
   details.project>summary{padding:12px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--ink)}
   details.project>summary::before{content:none}
+  .catchup-go{margin-left:auto;font:600 10px var(--m);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:3px 9px;text-decoration:none;white-space:nowrap}
   .pname{font-weight:700;font-size:15px}
   .pmeta{font:500 11px/1.5 var(--m);color:var(--faint)}
   .needs{margin-left:auto;font:600 11.5px/1 var(--d);color:var(--warn)}
@@ -311,7 +312,8 @@ async function renderLive() {
         return `<details class="project" ${hot || range !== 'all' || filter !== 'all' ? 'open' : ''}>
           <summary><a class="pname" href="/p/${encodeURIComponent(p.name)}" style="color:inherit">${esc(p.name)}</a>
             <span class="pmeta">${p.decisionCount} decision${p.decisionCount === 1 ? '' : 's'} · last ${when(activity(p.name))}</span>
-            ${hot ? `<span class="needs">${hot} waiting on you</span>` : ''}</summary>
+            ${hot ? `<span class="needs">${hot} waiting on you</span>` : ''}
+            <a class="catchup-go" href="/p/${encodeURIComponent(p.name)}?catchup=1" onclick="event.stopPropagation()">⚡ catch me up</a></summary>
           ${ds.map((d) => `<div class="drow ${OPEN(d) ? 'hotrow' : ''}"><span class="chip ${d.status}">${d.status.replace('_', ' ')}</span><a href="/d/${d.id}">${esc(d.title)}</a><span class="when">${d.kind} · ${when(d.createdAt)}${d.versionCount > 1 ? ` · v${d.versionCount}` : ''}</span>${
             d.reason && (d.status === 'rejected' || d.status === 'changes_requested') ? `<span class="reason">✕ ${esc(d.reason)}</span>` : ''
           }</div>`).join('')}

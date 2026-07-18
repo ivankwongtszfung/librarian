@@ -318,6 +318,98 @@ describe('bug reports (kind: bug)', () => {
   });
 });
 
+describe('projectCatchup', () => {
+  let r: Repository;
+  beforeEach(() => {
+    r = repo();
+  });
+
+  it('buckets by state, carries the real verdict reason, and counts', () => {
+    const human = r.upsertParticipant('human', 'you');
+
+    // approved with a rationale — the "why" must be the verdict reason
+    const approved = r.submit({
+      project: 'acct',
+      title: 'Use SQLite',
+      body: '## TL;DR\nSQLite is enough for one machine.',
+      kind: 'adr',
+      source: 'mcp',
+    });
+    r.applyVerdict({
+      decisionId: approved.decision.id,
+      to: 'approved',
+      reason: 'One machine, no server to run.',
+      participant: human,
+    });
+
+    // rejected — a red light, lands in critical
+    const rejected = r.submit({
+      project: 'acct',
+      title: 'Add Redis',
+      body: 'We could add Redis.',
+      kind: 'adr',
+      source: 'mcp',
+    });
+    r.applyVerdict({
+      decisionId: rejected.decision.id,
+      to: 'rejected',
+      reason: 'Not worth the operational cost.',
+      participant: human,
+    });
+
+    // open bug — right-now AND critical
+    r.submit({
+      project: 'acct',
+      title: 'BUG: totals off by a cent',
+      body: '# Bug\nRounding drift.',
+      kind: 'bug',
+      source: 'mcp',
+    });
+
+    // a decision in a different project must never leak in
+    r.submit({ project: 'other', title: 'unrelated', body: 'x', kind: 'adr', source: 'mcp' });
+
+    const c = r.projectCatchup('acct');
+
+    expect(c.project).toBe('acct');
+    expect(c.stats.decisions).toBe(3);
+    expect(c.stats.redLights).toBe(1);
+    expect(c.stats.bugs).toBe(1);
+    expect(c.stats.needsYou).toBe(1); // the open bug
+
+    // right now = the open bug
+    expect(c.rightNow.map((d) => d.title)).toEqual(['BUG: totals off by a cent']);
+
+    // critical = rejected + open bug
+    expect(c.critical.map((d) => d.title).sort()).toEqual([
+      'Add Redis',
+      'BUG: totals off by a cent',
+    ]);
+
+    // key decisions carry the human's real rationale
+    const key = c.keyDecisions.find((d) => d.title === 'Use SQLite');
+    expect(key?.reason).toBe('One machine, no server to run.');
+
+    // activity spans every decision, newest first
+    expect(c.activity).toHaveLength(3);
+    expect(c.activity[0].at).toBeGreaterThanOrEqual(c.activity[c.activity.length - 1].at);
+  });
+
+  it('falls back to the doc TL;DR when there is no verdict reason', () => {
+    r.submit({
+      project: 'acct',
+      title: 'Silent decision',
+      body: '## TL;DR\nThis is the gist.\n\nMore detail here.',
+      kind: 'adr',
+      source: 'mcp',
+    });
+    const c = r.projectCatchup('acct');
+    const item = c.rightNow[0];
+    expect(item.reason).toBeNull();
+    expect(item.tldr).toBe('This is the gist.');
+  });
+});
+
 function repoFactoryForBug(): Repository {
   return new Repository(openDb(':memory:'));
 }
