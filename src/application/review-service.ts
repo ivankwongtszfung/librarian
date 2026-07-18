@@ -1,5 +1,5 @@
 import type { DecisionStore, Notifier } from '../domain/ports.js';
-import { VerdictError } from '../domain/state-machine.js';
+import { VerdictError, assertTransition } from '../domain/state-machine.js';
 import { isResolved } from '../domain/types.js';
 import type {
   DecisionKind,
@@ -201,6 +201,19 @@ export class ReviewService {
       // changes is trying to decide, not to comment.
       throw new VerdictError('only a human may transition a verdict', 'not_authorized');
     }
+
+    // Validate the WHOLE operation before the first write. The comment insert
+    // and the verdict transition commit in separate store transactions, so a
+    // transition rejected after addComments would leave the comment stored
+    // while the response reports failure — the reviewer retypes it and the
+    // thread duplicates. An error reply must mean nothing was written.
+    const reason = input.reason ?? summarize(input.comments);
+    if (input.requestChanges) {
+      const outcome = this.repo.reviewOutcome(input.decisionId);
+      if (!outcome) throw new Error(`no such decision: ${input.decisionId}`);
+      assertTransition(outcome.status, 'changes_requested', reason);
+    }
+
     const participant = this.repo.upsertParticipant(authorType, input.by ?? 'you');
     const added = this.repo.addComments(input.decisionId, participant, input.comments);
 
@@ -217,7 +230,7 @@ export class ReviewService {
       this.postVerdict({
         decisionId: input.decisionId,
         to: 'changes_requested',
-        reason: input.reason ?? summarize(input.comments),
+        reason,
         by: input.by,
       });
     }
