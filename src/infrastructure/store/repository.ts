@@ -227,7 +227,7 @@ export class Repository implements DecisionStore {
                 decision.status,
                 'pending',
                 participant.id,
-                'reclaimed for review: no verdict backed this status',
+                RECLAIM_REASON,
                 now(),
               );
             this.db
@@ -799,7 +799,10 @@ export class Repository implements DecisionStore {
       status: d.status,
       createdAt: d.createdAt,
       decidedAt: d.decidedAt,
-      reason: lastReason(this.listVerdicts(d.id)),
+      // The "why" is the human's rationale — but the ADR-008 reclaim writes a
+      // system reason with no human behind it, so treat that as no rationale
+      // and let the doc's TL;DR speak instead.
+      reason: systemToNull(lastReason(this.listVerdicts(d.id))),
       tldr: firstMeaningfulLine(this.latestVersion(d.id)?.bodyMd ?? null),
     });
     const items = all.map(toItem);
@@ -889,6 +892,16 @@ export class Repository implements DecisionStore {
       submittedAt: r.submitted_at as number,
     };
   }
+}
+
+/** The reason written by the ADR-008 reclaim — a system event, not a human
+ *  rationale. Shared so the catchup can tell it apart from a real "why". */
+const RECLAIM_REASON = 'reclaimed for review: no verdict backed this status';
+
+/** System-authored reasons are not rationale; treat them as absent so a
+ *  briefing falls back to the doc's TL;DR instead of showing plumbing. */
+function systemToNull(reason: string | null): string | null {
+  return reason === RECLAIM_REASON ? null : reason;
 }
 
 function lastReason(verdicts: VerdictEvent[]): string | null {
