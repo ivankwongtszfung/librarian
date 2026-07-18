@@ -52,6 +52,33 @@ flowchart TD
    a session for that project connects, and the catchup surfaces "N messages
    waiting for a *project* session" so the human knows it's parked, not gone.
 
+## How it actually works, drawn
+
+Two sessions are open — one in `accounting_app`, one in `librarian`. Each
+declared its project when its channel opened the SSE stream. A question asked on
+an accounting_app doc reaches only the accounting_app agent:
+
+```mermaid
+sequenceDiagram
+    participant H as Human · chat bar
+    participant D as Daemon · /api/events
+    participant CA as Channel A · accounting_app
+    participant CB as Channel B · librarian
+    Note over CA,CB: at launch each opens SSE, declaring its project
+    CA->>D: GET /api/events (x-librarian-project: accounting_app)
+    CB->>D: GET /api/events (x-librarian-project: librarian)
+    H->>D: POST /api/messages (about an accounting_app decision)
+    Note over D: message.project = accounting_app<br/>filter each connection's own listener
+    D->>CA: match → write SSE event
+    D--xCB: mismatch → skipped
+    CA->>CA: notifications/claude/channel → agent turn
+    Note over D,CB: if NO channel had declared accounting_app,<br/>the row stays undelivered (ADR-011) and<br/>flushes when such a session connects
+```
+
+The daemon never "chooses" a session — it writes to every connection whose own
+declared project matches, and each connection is a separate `res` it already
+holds. Global messages (no project) skip the filter and reach all.
+
 ## Why per-connection server-side filtering (v2 correction)
 
 v1 chose *client-side* filtering (broadcast to all, each channel drops what
