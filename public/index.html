@@ -514,6 +514,14 @@ new EventSource('/api/events').addEventListener('message', () => {
 const chatIn = document.getElementById('chat-in');
 const chatSt = document.getElementById('chat-st');
 const chatCtx = document.getElementById('chat-ctx');
+
+// The draft belongs to the human, not the page lifecycle: it survives
+// reloads, daemon restarts, and browser restarts until it is sent.
+const DRAFT_KEY = `librarian.draft:${location.pathname}`;
+try { chatIn.value = localStorage.getItem(DRAFT_KEY) ?? ''; } catch { /* private mode */ }
+chatIn.addEventListener('input', () => {
+  try { localStorage.setItem(DRAFT_KEY, chatIn.value); } catch { /* best effort */ }
+});
 async function loadCtxPicker() {
   const { body } = await api('/decisions');
   const open = (body.decisions ?? []).filter((d) => d.status === 'pending' || d.status === 'changes_requested');
@@ -539,6 +547,7 @@ async function sendChat() {
   if (res?.ok) {
     const out = await res.json().catch(() => ({}));
     chatIn.value = '';
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* best effort */ }
     chatSt.textContent = out.queued
       ? '✓ queued — agent busy'
       : out.persisted ? '✓ agent + thread' : '✓ sent to agent';
