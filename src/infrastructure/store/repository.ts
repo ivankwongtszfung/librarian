@@ -926,7 +926,6 @@ function firstMeaningfulLine(body: string | null): string | null {
     }
     if (inFence) continue;
     if (line.startsWith('#')) continue; // heading
-    if (/^\*\*(Status|Date|Project|Read time)/i.test(line)) continue; // meta line
     // Strip a leading list/quote marker and inline markdown emphasis/code/links.
     const text = line
       .replace(/^[>\-*+]\s*/, '')
@@ -935,6 +934,9 @@ function firstMeaningfulLine(body: string | null): string | null {
       .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
       .trim();
     if (!text) continue;
+    // The metadata row under the H1 — both the ADR format ("Status: … · Date:")
+    // and the bug format ("Kind: bug · Severity: …"). Not a gist; skip it.
+    if (/^(kind|status|severity|date|project|read\s*time)\s*:/i.test(text)) continue;
     return text.length > 200 ? `${text.slice(0, 197)}…` : text;
   }
   return null;
