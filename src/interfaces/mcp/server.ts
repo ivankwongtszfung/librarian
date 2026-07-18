@@ -4,7 +4,7 @@ import { MAX_WAIT_SECONDS, type ReviewService } from '../../application/review-s
 import type { DecisionStore } from '../../domain/ports.js';
 import type { DecisionKind, DecisionStatus } from '../../domain/types.js';
 
-const KIND = z.enum(['plan', 'adr', 'prd', 'arch']);
+const KIND = z.enum(['plan', 'adr', 'prd', 'arch', 'bug']);
 const STATUS = z.enum(['pending', 'changes_requested', 'approved', 'rejected', 'superseded']);
 
 function text(payload: unknown) {

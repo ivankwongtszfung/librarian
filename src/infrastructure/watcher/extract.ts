@@ -153,6 +153,7 @@ export function findDocWrite(line: Line): { filePath: string; content: string } 
 export function classifyDoc(filePath: string): DecisionKind {
   const lower = filePath.toLowerCase();
   if (lower.includes('/adr')) return 'adr';
+  if (lower.includes('bug')) return 'bug';
   if (lower.includes('prd')) return 'prd';
   if (lower.includes('plan')) return 'plan';
   return 'arch';

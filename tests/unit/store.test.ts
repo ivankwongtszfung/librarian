@@ -301,3 +301,23 @@ describe('dedup vs review intent (ADR-008)', () => {
     expect(r.getDecisionDetail(original.decision.id)!.versions).toHaveLength(1);
   });
 });
+
+describe('bug reports (kind: bug)', () => {
+  it('a bug report submits, reviews, and searches like any decision', () => {
+    const r = repoFactoryForBug();
+    const result = r.submit({
+      project: 'librarian',
+      title: 'BUG-1: something is silently wrong',
+      body: '# BUG-1\nSymptom: ...',
+      kind: 'bug',
+      source: 'mcp',
+    });
+    expect(result.decision.kind).toBe('bug');
+    expect(result.decision.status).toBe('pending');
+    expect(r.search('silently wrong')[0]?.kind).toBe('bug');
+  });
+});
+
+function repoFactoryForBug(): Repository {
+  return new Repository(openDb(':memory:'));
+}
