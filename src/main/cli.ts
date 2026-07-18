@@ -12,6 +12,7 @@ import {
 } from '../infrastructure/service/install.js';
 import { openDb } from '../infrastructure/store/db.js';
 import { Repository } from '../infrastructure/store/repository.js';
+import { runChannel } from '../interfaces/mcp/channel.js';
 import { parseDuration } from '../util/duration.js';
 import { errFields, log } from '../util/logger.js';
 import { startDaemon } from './daemon.js';
@@ -167,6 +168,8 @@ const HELP = `librarian — a decision library for AI agent sessions
   librarian export [--format md]   dump the archive (json default) to stdout or --out
   librarian wait <review_id>       block until the verdict, then exit
                                    (0 = resolved, 1 = error, 2 = still pending)
+  librarian channel                stdio MCP server that pushes verdicts as agent
+                                   turns; launch your agent with --channels librarian-channel
 
 Daemon options:
   --port <n>        HTTP port (default 7801)
@@ -204,6 +207,8 @@ async function main(): Promise<void> {
       return runInstall();
     case 'uninstall':
       return runUninstall();
+    case 'channel':
+      return runChannel();
     default:
       return runDaemon();
   }
