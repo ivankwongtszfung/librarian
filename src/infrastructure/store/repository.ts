@@ -243,6 +243,7 @@ export class Repository implements DecisionStore {
         return { decision, version, deduped: true };
       }
 
+      const at = input.at ?? now();
       const decision: Decision = {
         id: newId('dec'),
         projectId: project.id,
@@ -253,8 +254,8 @@ export class Repository implements DecisionStore {
         source: input.source,
         contentHash: hash,
         pinnedCommit: input.pinnedCommit ?? null,
-        createdAt: now(),
-        decidedAt: input.initialStatus && input.initialStatus !== 'pending' ? now() : null,
+        createdAt: at,
+        decidedAt: input.initialStatus && input.initialStatus !== 'pending' ? at : null,
       };
 
       this.db
