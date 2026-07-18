@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catchup — Librarian</title>
+<style>
+  /* Same design system as the library (public/index.html). */
+  :root {
+    --bg: #F7F8F5; --surface: #FFFFFF; --ink: #1B231E; --muted: #5C665F;
+    --line: #DDE2DB; --green: #1B7A4A; --green-ink: #14603A; --green-soft: #E7F1E9;
+    --red: #BC4438; --red-soft: #F7EAE8; --amber: #A87614; --amber-soft: #F5EEDC;
+    --code-bg: #EEF1EC;
+    --sans: "Avenir Next", Avenir, "Helvetica Neue", system-ui, sans-serif;
+    --serif: Charter, "Bitstream Charter", Cambria, Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11160F; --surface: #181F16; --ink: #E4EAE2; --muted: #93A093;
+      --line: #2A342A; --green: #4CBE7E; --green-ink: #6FD79C; --green-soft: #1A2B1F;
+      --red: #E07A6C; --red-soft: #2E1D1A; --amber: #D9AE55; --amber-soft: #2B2415;
+      --code-bg: #212A1F;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--serif); line-height: 1.55; }
+  header {
+    position: sticky; top: 0; z-index: 10; background: var(--bg);
+    border-bottom: 1px solid var(--line); padding: 0.9rem 1.25rem;
+    display: flex; gap: 0.8rem; align-items: baseline;
+  }
+  .brand { font-family: var(--sans); font-weight: 700; font-size: 1.05rem; }
+  .brand span { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+  header a { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); margin-left: auto; text-decoration: none; }
+  header a:hover { color: var(--ink); }
+  main { max-width: 52rem; margin: 0 auto; padding: 1.6rem 1.25rem 5rem; }
+
+  /* zoom level 0 — the ten-second read */
+  .topline { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+          padding: 0.7rem 1.1rem; font-family: var(--sans); }
+  .stat b { display: block; font-size: 1.5rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--muted); font-size: 0.75rem; }
+  .stat.hot { border-color: var(--amber); background: var(--amber-soft); }
+  .stat.hot b { color: var(--amber); }
+  .stat.bad { border-color: var(--red); background: var(--red-soft); }
+  .stat.bad b { color: var(--red); }
+
+  .banner { border-radius: 10px; padding: 0.9rem 1.1rem; margin-bottom: 1.4rem; font-family: var(--sans); font-size: 0.93rem; }
+  .banner.calm { background: var(--green-soft); border: 1px solid var(--green); color: var(--green-ink); }
+  .banner.hot { background: var(--amber-soft); border: 1px solid var(--amber); }
+  .banner.hot .t { font-weight: 700; color: var(--amber); }
+  .banner ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+  .banner li { margin: 0.25rem 0; }
+  .banner a { color: inherit; }
+
+  .section-title { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em;
+                   text-transform: uppercase; color: var(--muted); margin: 1.6rem 0 0.7rem; }
+
+  /* red lights — rejections are decisions too */
+  .redlight { background: var(--red-soft); border: 1px solid var(--red); border-radius: 8px;
+              padding: 0.7rem 1rem; margin-bottom: 0.6rem; font-size: 0.92rem; }
+  .redlight a { color: var(--red); font-family: var(--sans); font-weight: 600; text-decoration: none; }
+  .redlight .why { color: var(--muted); }
+
+  /* zoom level 1 — project cards; level 2 lives inside the <details> */
+  details.project { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+                    margin-bottom: 0.8rem; overflow: hidden; }
+  details.project > summary { list-style: none; cursor: pointer; padding: 0.9rem 1.1rem;
+                              display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
+  details.project > summary::-webkit-details-marker { display: none; }
+  details.project > summary:hover { background: var(--code-bg); }
+  .pname { font-family: var(--sans); font-weight: 700; font-size: 1rem; }
+  .pmeta { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+  .chip { font-family: var(--mono); font-size: 0.68rem; padding: 0.14rem 0.5rem;
+          border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .chip.pending, .chip.changes_requested { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+  .chip.approved { color: var(--green-ink); border-color: var(--green); background: var(--green-soft); }
+  .chip.rejected { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+  .needs { margin-left: auto; font-family: var(--sans); font-size: 0.78rem; font-weight: 600; color: var(--amber); }
+  .caret { color: var(--muted); font-family: var(--sans); }
+  details[open] .caret { transform: rotate(90deg); display: inline-block; }
+
+  .dlist { border-top: 1px solid var(--line); }
+  .drow { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap;
+          padding: 0.55rem 1.1rem; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+  .drow:last-child { border-bottom: 0; }
+  .drow a { color: var(--ink); text-decoration: none; font-family: var(--sans); }
+  .drow a:hover { text-decoration: underline; }
+  .drow .when { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-left: auto; }
+  .drow .reason { flex-basis: 100%; font-size: 0.84rem; color: var(--red); padding-left: 0.1rem; }
+  .empty { color: var(--muted); font-style: italic; padding: 2rem 0; }
+  footer { text-align: center; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); padding: 2rem 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">📚 Catchup <span>— every project, one glance, live</span></div>
+  <a href="/">← library</a>
+</header>
+<main id="app"><p class="empty">Loading…</p></main>
+<footer>reads the live store · updates itself on every event</footer>
+
+<script type="module">
+const app = document.getElementById('app');
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const when = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const chip = (s) => `<span class="chip ${s}">${s.replace('_', ' ')}</span>`;
+const NEEDS = (d) => d.status === 'pending' || d.status === 'changes_requested';
+
+async function render() {
+  const [pRes, dRes] = await Promise.all([fetch('/api/projects'), fetch('/api/decisions')]);
+  const projects = (await pRes.json()).projects ?? [];
+  const decisions = (await dRes.json()).decisions ?? [];
+
+  const byProject = new Map();
+  for (const d of decisions) {
+    if (!byProject.has(d.projectName)) byProject.set(d.projectName, []);
+    byProject.get(d.projectName).push(d);
+  }
+
+  const needsYou = decisions.filter(NEEDS);
+  const redLights = decisions.filter((d) => d.status === 'rejected');
+
+  // zoom 0 — the ten-second read
+  const topline = `
+    <div class="topline">
+      <div class="stat ${needsYou.length ? 'hot' : ''}"><b>${needsYou.length}</b><small>needs you</small></div>
+      <div class="stat ${redLights.length ? 'bad' : ''}"><b>${redLights.length}</b><small>red lights</small></div>
+      <div class="stat"><b>${projects.length}</b><small>projects</small></div>
+      <div class="stat"><b>${decisions.length}</b><small>decisions</small></div>
+    </div>
+    ${needsYou.length
+      ? `<div class="banner hot"><span class="t">Waiting on your verdict:</span><ul>${needsYou
+          .map((d) => `<li><a href="/d/${d.id}">${esc(d.title)}</a> — ${esc(d.projectName)}${d.reason ? ` <span class="why">(${esc(d.reason)})</span>` : ''}</li>`)
+          .join('')}</ul></div>`
+      : `<div class="banner calm">✓ Nothing waits on you. Zoom out, breathe, pick a thread below.</div>`}
+  `;
+
+  // red lights get their own visible shelf — a rejection is a standing constraint
+  const lights = redLights.length
+    ? `<div class="section-title">Red lights — do not re-propose without answering the reason</div>` +
+      redLights
+        .map((d) => `<div class="redlight"><a href="/d/${d.id}">✕ ${esc(d.title)}</a> — ${esc(d.projectName)}<div class="why">${esc(d.reason ?? '')}</div></div>`)
+        .join('')
+    : '';
+
+  // zoom 1 — project cards, most recently active first; zoom 2 inside <details>
+  const activity = (name) => Math.max(...(byProject.get(name) ?? [{ createdAt: 0 }]).map((d) => d.createdAt));
+  const cards = projects
+    .sort((a, b) => activity(b.name) - activity(a.name))
+    .map((p) => {
+      const ds = (byProject.get(p.name) ?? []).sort((a, b) => b.createdAt - a.createdAt);
+      const hot = ds.filter(NEEDS).length;
+      return `<details class="project" ${hot ? 'open' : ''}>
+        <summary>
+          <span class="caret">›</span>
+          <span class="pname">${esc(p.name)}</span>
+          <span class="pmeta">${p.decisionCount} decision${p.decisionCount === 1 ? '' : 's'} · last ${when(activity(p.name))}</span>
+          ${hot ? `<span class="needs">${hot} needs you</span>` : ''}
+        </summary>
+        <div class="dlist">${ds
+          .map((d) => `<div class="drow">${chip(d.status)}<a href="/d/${d.id}">${esc(d.title)}</a><span class="when">${d.kind} · ${when(d.createdAt)}${d.versionCount > 1 ? ` · v${d.versionCount}` : ''}</span>${
+            d.reason && (d.status === 'rejected' || d.status === 'changes_requested') ? `<div class="reason">✕ ${esc(d.reason)}</div>` : ''
+          }</div>`)
+          .join('')}</div>
+      </details>`;
+    })
+    .join('');
+
+  app.innerHTML = decisions.length
+    ? `${topline}${lights}<div class="section-title">Projects — click to zoom in</div>${cards}`
+    : '<p class="empty">No decisions yet. Point an agent at the MCP endpoint and submit one.</p>';
+}
+
+render();
+// Live: any store event re-renders. A dropped stream costs staleness until
+// reload, never correctness — the truth is always re-fetched, not patched.
+new EventSource('/api/events').addEventListener('message', render);
+</script>
+</body>
+</html>
