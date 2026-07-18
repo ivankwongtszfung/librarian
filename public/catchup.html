@@ -1,183 +1,184 @@
+<!--
+  Catchup briefing for the librarian world — built on the catchup-template
+  skill (~/.claude/skills/project-state/catchup-template.html). Three
+  properties to preserve when editing: DRILL-DOWN (depth is folded, never
+  inlined) · JUST-ENOUGH + VISUAL (scan, don't read) · CRITICAL IS LOUD.
+  The "Open — waiting on you" forks hydrate live from /api/decisions, so
+  verdict links never go stale. Everything else is an authored briefing:
+  update surgically after meaningful steps, real timestamps only,
+  activity log is append-only.
+-->
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Catchup — Librarian</title>
+<meta http-equiv="refresh" content="60">
+<title>Librarian — catchup</title>
 <style>
-  /* Same design system as the library (public/index.html). */
-  :root {
-    --bg: #F7F8F5; --surface: #FFFFFF; --ink: #1B231E; --muted: #5C665F;
-    --line: #DDE2DB; --green: #1B7A4A; --green-ink: #14603A; --green-soft: #E7F1E9;
-    --red: #BC4438; --red-soft: #F7EAE8; --amber: #A87614; --amber-soft: #F5EEDC;
-    --code-bg: #EEF1EC;
-    --sans: "Avenir Next", Avenir, "Helvetica Neue", system-ui, sans-serif;
-    --serif: Charter, "Bitstream Charter", Cambria, Georgia, serif;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  :root{
+    --bg:#F5F4F1;--panel:#fff;--panel2:#F0EEE9;--ink:#191C22;--mut:#5C6270;--faint:#8A909C;--line:#DCDAD3;
+    --accent:#1B7A4A;--accent-soft:rgba(27,122,74,.10);
+    --ok:#16764A;--ok-soft:rgba(22,118,74,.12);--warn:#9A6B0F;--warn-soft:rgba(154,107,15,.13);
+    --crit:#B02A21;--crit-soft:rgba(176,42,33,.11);
+    --d:"Avenir Next",Avenir,"Segoe UI",system-ui,sans-serif;--m:ui-monospace,"SF Mono",Menlo,monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #11160F; --surface: #181F16; --ink: #E4EAE2; --muted: #93A093;
-      --line: #2A342A; --green: #4CBE7E; --green-ink: #6FD79C; --green-soft: #1A2B1F;
-      --red: #E07A6C; --red-soft: #2E1D1A; --amber: #D9AE55; --amber-soft: #2B2415;
-      --code-bg: #212A1F;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--serif); line-height: 1.55; }
-  header {
-    position: sticky; top: 0; z-index: 10; background: var(--bg);
-    border-bottom: 1px solid var(--line); padding: 0.9rem 1.25rem;
-    display: flex; gap: 0.8rem; align-items: baseline;
-  }
-  .brand { font-family: var(--sans); font-weight: 700; font-size: 1.05rem; }
-  .brand span { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
-  header a { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); margin-left: auto; text-decoration: none; }
-  header a:hover { color: var(--ink); }
-  main { max-width: 52rem; margin: 0 auto; padding: 1.6rem 1.25rem 5rem; }
+  @media(prefers-color-scheme:dark){:root{
+    --bg:#0E1016;--panel:#161922;--panel2:#12141B;--ink:#E7E9EF;--mut:#98A0AF;--faint:#6C7484;--line:#2A2F3D;
+    --accent:#4CBE7E;--accent-soft:rgba(76,190,126,.14);
+    --ok:#54C489;--ok-soft:rgba(84,196,137,.13);--warn:#DDB25A;--warn-soft:rgba(221,178,90,.13);
+    --crit:#F0776B;--crit-soft:rgba(240,119,107,.13);}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.6 var(--d);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:820px;margin:0 auto;padding:26px 18px 70px}
+  h1{font-size:22px;letter-spacing:-.01em;margin:0}
+  h2{font:600 11px/1 var(--m);letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin:34px 0 12px;display:flex;gap:10px;align-items:center}
+  h2::after{content:"";flex:1;height:1px;background:var(--line)}
+  code{font:500 .85em/1.4 var(--m);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  .top{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--line);padding-bottom:14px}
+  .top .meta{font:500 11.5px/1.5 var(--m);color:var(--faint)}
+  .phase{font:600 10px/1 var(--m);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:5px 9px}
+  .why{font-size:14px;color:var(--mut);margin:12px 0 0;font-style:italic}
 
-  /* zoom level 0 — the ten-second read */
-  .topline { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-          padding: 0.7rem 1.1rem; font-family: var(--sans); }
-  .stat b { display: block; font-size: 1.5rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
-  .stat small { color: var(--muted); font-size: 0.75rem; }
-  .stat.hot { border-color: var(--amber); background: var(--amber-soft); }
-  .stat.hot b { color: var(--amber); }
-  .stat.bad { border-color: var(--red); background: var(--red-soft); }
-  .stat.bad b { color: var(--red); }
+  .now{margin:18px 0 0;border:1px solid var(--accent);border-left:4px solid var(--accent);border-radius:12px;background:var(--panel);box-shadow:0 8px 26px rgba(28,31,38,.07);padding:16px 18px}
+  .now .k{font:700 10px/1 var(--m);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+  .now .big{font-size:18px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px;text-wrap:balance}
+  .now p{margin:6px 0 0;font-size:13.5px;color:var(--mut)}
+  .now .do{margin-top:12px;display:grid;gap:6px}
+  .now .do > a,.now .do > span{display:flex;gap:9px;align-items:baseline;font-size:13.7px}
+  .now .do .n{font:700 10px/1.6 var(--m);color:var(--accent);background:var(--accent-soft);border-radius:50%;min-width:19px;height:19px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
 
-  .banner { border-radius: 10px; padding: 0.9rem 1.1rem; margin-bottom: 1.4rem; font-family: var(--sans); font-size: 0.93rem; }
-  .banner.calm { background: var(--green-soft); border: 1px solid var(--green); color: var(--green-ink); }
-  .banner.hot { background: var(--amber-soft); border: 1px solid var(--amber); }
-  .banner.hot .t { font-weight: 700; color: var(--amber); }
-  .banner ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
-  .banner li { margin: 0.25rem 0; }
-  .banner a { color: inherit; }
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex:0 0 auto}
+  /* planned keeps the template's violet so it can never be mistaken for done */
+  .g{background:var(--ok)}.a{background:var(--warn)}.r{background:var(--crit)}.b{background:#7A6FF0}
+  ul.rows{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+  ul.rows li{display:flex;align-items:baseline;font-size:14px;gap:2px}
+  ul.rows li b{font-weight:600}ul.rows li .t{color:var(--mut);font-size:13px;margin-left:4px}
+  .legend{font:500 11px/1 var(--m);color:var(--faint);margin:9px 0 0;display:flex;gap:14px;flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center}
 
-  .section-title { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em;
-                   text-transform: uppercase; color: var(--muted); margin: 1.6rem 0 0.7rem; }
+  .critical{border:1px solid var(--crit);border-left:4px solid var(--crit);border-radius:11px;background:var(--crit-soft);padding:13px 16px;margin-top:4px}
+  .critical b{color:var(--crit)}
+  .critical ul{margin:9px 0 0;padding-left:0;list-style:none;display:grid;gap:6px}
+  .critical li{font-size:13.5px;line-height:1.5}
+  .critical li .id{font:700 11px var(--m);color:var(--crit);margin-right:6px}
 
-  /* red lights — rejections are decisions too */
-  .redlight { background: var(--red-soft); border: 1px solid var(--red); border-radius: 8px;
-              padding: 0.7rem 1rem; margin-bottom: 0.6rem; font-size: 0.92rem; }
-  .redlight a { color: var(--red); font-family: var(--sans); font-weight: 600; text-decoration: none; }
-  .redlight .why { color: var(--muted); }
+  .forks{display:grid;gap:9px}
+  .fork{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px 15px}
+  .fork .h{font-weight:700;font-size:14.5px}.fork p{margin:4px 0 0;font-size:13.3px;color:var(--mut)}
+  .fork .tag{font:600 9.5px/1 var(--m);letter-spacing:.05em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line);border-radius:5px;padding:3px 6px;margin-left:8px;white-space:nowrap}
+  .fork.calm{border-color:var(--ok);background:var(--ok-soft);font-size:13.5px}
 
-  /* zoom level 1 — project cards; level 2 lives inside the <details> */
-  details.project { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-                    margin-bottom: 0.8rem; overflow: hidden; }
-  details.project > summary { list-style: none; cursor: pointer; padding: 0.9rem 1.1rem;
-                              display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
-  details.project > summary::-webkit-details-marker { display: none; }
-  details.project > summary:hover { background: var(--code-bg); }
-  .pname { font-family: var(--sans); font-weight: 700; font-size: 1rem; }
-  .pmeta { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
-  .chip { font-family: var(--mono); font-size: 0.68rem; padding: 0.14rem 0.5rem;
-          border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
-  .chip.pending, .chip.changes_requested { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
-  .chip.approved { color: var(--green-ink); border-color: var(--green); background: var(--green-soft); }
-  .chip.rejected { color: var(--red); border-color: var(--red); background: var(--red-soft); }
-  .needs { margin-left: auto; font-family: var(--sans); font-size: 0.78rem; font-weight: 600; color: var(--amber); }
-  .caret { color: var(--muted); font-family: var(--sans); }
-  details[open] .caret { transform: rotate(90deg); display: inline-block; }
-
-  .dlist { border-top: 1px solid var(--line); }
-  .drow { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap;
-          padding: 0.55rem 1.1rem; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
-  .drow:last-child { border-bottom: 0; }
-  .drow a { color: var(--ink); text-decoration: none; font-family: var(--sans); }
-  .drow a:hover { text-decoration: underline; }
-  .drow .when { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-left: auto; }
-  .drow .reason { flex-basis: 100%; font-size: 0.84rem; color: var(--red); padding-left: 0.1rem; }
-  .empty { color: var(--muted); font-style: italic; padding: 2rem 0; }
-  footer { text-align: center; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); padding: 2rem 0; }
+  details{border-top:1px solid var(--line);padding:11px 0 2px}
+  summary{cursor:pointer;font:600 13px var(--d);color:var(--mut);list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸ ";color:var(--faint)}
+  details[open] summary::before{content:"▾ "}
+  details .in{padding:10px 0 4px;font-size:13.4px;line-height:1.6;color:var(--mut)}
+  details .in b{color:var(--ink)}details .in code{font-size:12px}
+  .log{display:grid;gap:8px;padding:10px 0 4px}.log .e{display:grid;grid-template-columns:88px 1fr;gap:10px;font-size:13px;color:var(--mut)}
+  .log .e .dt{font:600 11px/1.5 var(--m);color:var(--faint)}
+  a.art{display:block;font-size:13.4px;padding:2px 0}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">📚 Catchup <span>— every project, one glance, live</span></div>
-  <a href="/">← library</a>
-</header>
-<main id="app"><p class="empty">Loading…</p></main>
-<footer>reads the live store · updates itself on every event</footer>
+<div class="wrap">
+
+  <div class="top">
+    <div><h1>📚 Librarian</h1><div class="meta">local decision library + review gate for AI agent sessions · <a href="/index.html">library</a></div></div>
+    <div style="text-align:right"><span class="phase">Phase · v1 hardening</span><div class="meta" style="margin-top:6px">updated 2026-07-18 01:35 EDT</div></div>
+  </div>
+
+  <p class="why">Why this exists: rent the conversation, own the decisions — every agent decision gets a human verdict, readable here instead of a terminal, and rejections stay on record so nothing is re-proposed blind.</p>
+
+  <!-- ========= RIGHT NOW ========= -->
+  <div class="now">
+    <div class="k">Right now — if you have 5 minutes</div>
+    <p class="big" id="now-big">Two ADRs wait on your verdict, and the watcher still self-approves doc captures until the ADR-008 build lands.</p>
+    <p>Everything shipped today is merged and live — nothing is broken or urgent. The queue is short and each item is a one-click read.</p>
+    <div class="do" id="now-do">
+      <span><span class="n">1</span><span><b><a href="/d/dec_5d22dab9de524a4e86a4">Review ADR-009 v2</a>.</b> Mermaid diagrams — the demo now renders in this UI; v2 just states shipped reality. ~3 min.</span></span>
+      <span><span class="n">2</span><span><b><a href="/d/dec_6bb025fceacd418c8f48">Review ADR-007 v4</a>.</b> The channel threat model, now with the real diagrams your first review asked for. ~4 min.</span></span>
+      <span><span class="n">3</span><span><b>Say “go” on the ADR-008 watcher build.</b> Approved, unbuilt — it ends the fabricated-approval loop for good (3 junk rows swept today alone).</span></span>
+    </div>
+  </div>
+
+  <!-- ========= STATUS ========= -->
+  <h2>Where things stand</h2>
+  <ul class="rows">
+    <li><span class="dot g"></span><b>Verdict loop closed end-to-end.</b><span class="t">submit → your click in the UI → <code>claude/channel</code> push wakes the agent; launch via <code>claude-lib</code></span></li>
+    <li><span class="dot g"></span><b>The UI reads like a document server.</b><span class="t">tables, semantic callouts (⛔/⚠️/✅), mermaid SVGs (ADR-009, PR #11), pending filter fixed</span></li>
+    <li><span class="dot g"></span><b>Reviews can't be hijacked anymore.</b><span class="t">thread beats hash, unbacked "approved" gets reclaimed to pending (PR #10, 5 regression tests)</span></li>
+    <li><span class="dot g"></span><b>Runs as a real service.</b><span class="t">launchd KeepAlive, crash handlers, JSON logs, <code>librarian export</code> (PR #3)</span></li>
+    <li><span class="dot a"></span><b>ADR-008 watcher policy — approved, unbuilt.</b><span class="t">doc-write captures still land "approved" with zero verdict events; junk regenerates until built</span></li>
+    <li><span class="dot b"></span><b>v1 tail.</b><span class="t">CI + npm release (decided in ADR-006, unbuilt) · then v2: verdict auth (ADR-004) → mailbox (ADR-003)</span></li>
+    <li><span class="dot r"></span><b>Loopback-only is a hard gate.</b><span class="t">see critical below — this is deliberate, not a gap in progress</span></li>
+  </ul>
+  <div class="legend"><span><span class="dot g"></span>done</span><span><span class="dot a"></span>in progress</span><span><span class="dot b"></span>planned</span><span><span class="dot r"></span>blocked / risk</span></div>
+
+  <!-- ========= CRITICAL ========= -->
+  <h2>🔴 Do-not-forget — critical</h2>
+  <div class="critical">
+    <b>Both bite the moment you forget they exist.</b>
+    <ul>
+      <li><span class="id">GATE</span><b>critical</b> · the daemon stays loopback-only until ADR-004 (verdict auth) is built — the channel turns a forged verdict into an <i>injected instruction</i> (ADR-007 T1) → no tunnel, no <code>--host 0.0.0.0</code>, ever, until then.</li>
+      <li><span class="id">WATCH</span><b>high</b> · until the ADR-008 build, an <code>approved</code> with <b>zero verdict events</b> is a watcher fabrication, not a decision → don't trust it, sweep it, and prioritize the build.</li>
+    </ul>
+  </div>
+
+  <!-- ========= OPEN — hydrated live from the store ========= -->
+  <h2>Open — waiting on you</h2>
+  <div class="forks" id="forks"><div class="fork"><p>Loading from the live store…</p></div></div>
+
+  <!-- ========= DRILL-DOWN ========= -->
+  <h2>Reference</h2>
+
+  <details><summary>Key decisions &amp; why</summary><div class="in">
+    <b>ADR-003 — record vs mailbox:</b> the decision record never leaves local SQLite; cross-device sync is a transient <i>ciphertext-only</i> mailbox. Multi-device forces a store — devices aren't co-present; “pure tunnel” was retired for that reason.<br><br>
+    <b>ADR-004 — a verdict authenticates itself:</b> an <code>approved</code> makes an agent act, so verdict authority must never be grantable by anything a transport holds (token, JWT, mailbox possession). The gate for all remote exposure.<br><br>
+    <b>ADR-005 — clean architecture, lightly:</b> the Dependency Rule (domain ← application ← infrastructure/interfaces), no DTO-per-layer ceremony. The <code>DecisionStore</code> port is the seam new storage/transports plug into.<br><br>
+    <b>ADR-007 — accept the dev channel locally:</b> <code>--dangerously-load-development-channels</code> is the supported path for a self-registered channel, not a warning about the code; the trade is bounded by the loopback gate above.<br><br>
+    <b>ADR-008 — provenance is additive, authority is not:</b> only a verdict event may make a decision <code>approved</code>. Dedup half shipped (PR #10); watcher half approved &amp; awaiting build.<br><br>
+    <b>ADR-009 — mermaid over ASCII:</b> diagrams are data, not art; vendored (3.4 MB) + pinned because the review UI is the verdict surface and loads zero remote code.<br><br>
+    <b>Invariant:</b> a red light without a reason is not a decision — enforced in the state machine, the schema, and the API.
+  </div></details>
+
+  <details><summary>Links &amp; artifacts</summary><div class="in">
+    <a class="art" href="/index.html">Library — all decisions, searchable (rejected ones included)</a>
+    <a class="art" href="https://github.com/ivankwongtszfung/librarian">GitHub — ivankwongtszfung/librarian (main, all PRs merged)</a>
+    <a class="art" href="https://claude.ai/code/artifact/85cc87ee-23eb-425c-82c4-d607b42fdb54">ADR-008 designed artifact — the watcher bug, drawn</a>
+    <a class="art" href="/d/dec_25de3b2f74e94ae9b73c">ADR-008 thread — approved, the first fully-audited verdict</a>
+  </div></details>
+
+  <details><summary>Loose ends</summary><div class="in">
+    · “Session storage for checkout” is smoke-test demo data — delete or keep, one word.<br>
+    · <code>claude-lib</code> zsh wrapper (channel flags) — suggested for <code>~/.zshrc</code>, not yet added.<br>
+    · Vendored mermaid measured 3.4 MB vs the ~2 MB estimate — fine for now, watch it at npm-publish time (gap 6).
+  </div></details>
+
+  <details><summary>Activity log</summary><div class="log">
+    <div class="e"><span class="dt">07-18</span><span>Catchup rebuilt on the briefing template (this page). Mermaid rendering shipped + all 3 ASCII diagrams migrated (PR #11); ADR-009 v2 resubmitted.</span></div>
+    <div class="e"><span class="dt">07-17</span><span>Watcher fabrication bug found via dogfooding; ADR-008 written, approved; dedup hijack fixed (PR #10) — reclaim proven live; data swept (4 junk rows + dup comment + stale FTS).</span></div>
+    <div class="e"><span class="dt">07-17</span><span>Review UI: doc rendering upgraded (tables/ol/hr/links, PR #8), artifact polish + semantic callouts + pending-filter fix (PR #9); double-comment bug fixed (PR #7).</span></div>
+    <div class="e"><span class="dt">07-17</span><span>Channel push path live end-to-end: <code>librarian channel</code> (PRs #5–#6), registered, first verdicts delivered as agent turns; ADR-007 threat model through 4 review rounds.</span></div>
+    <div class="e"><span class="dt">07-17</span><span>Productionized gaps 2–5 (service/crash/logging/export, PR #3); ADR-006 decided CI + release; daemon running under launchd.</span></div>
+  </div></details>
+
+</div>
 
 <script type="module">
-const app = document.getElementById('app');
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const when = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-const chip = (s) => `<span class="chip ${s}">${s.replace('_', ' ')}</span>`;
-const NEEDS = (d) => d.status === 'pending' || d.status === 'changes_requested';
-
-async function render() {
-  const [pRes, dRes] = await Promise.all([fetch('/api/projects'), fetch('/api/decisions')]);
-  const projects = (await pRes.json()).projects ?? [];
-  const decisions = (await dRes.json()).decisions ?? [];
-
-  const byProject = new Map();
-  for (const d of decisions) {
-    if (!byProject.has(d.projectName)) byProject.set(d.projectName, []);
-    byProject.get(d.projectName).push(d);
-  }
-
-  const needsYou = decisions.filter(NEEDS);
-  const redLights = decisions.filter((d) => d.status === 'rejected');
-
-  // zoom 0 — the ten-second read
-  const topline = `
-    <div class="topline">
-      <div class="stat ${needsYou.length ? 'hot' : ''}"><b>${needsYou.length}</b><small>needs you</small></div>
-      <div class="stat ${redLights.length ? 'bad' : ''}"><b>${redLights.length}</b><small>red lights</small></div>
-      <div class="stat"><b>${projects.length}</b><small>projects</small></div>
-      <div class="stat"><b>${decisions.length}</b><small>decisions</small></div>
-    </div>
-    ${needsYou.length
-      ? `<div class="banner hot"><span class="t">Waiting on your verdict:</span><ul>${needsYou
-          .map((d) => `<li><a href="/d/${d.id}">${esc(d.title)}</a> — ${esc(d.projectName)}${d.reason ? ` <span class="why">(${esc(d.reason)})</span>` : ''}</li>`)
-          .join('')}</ul></div>`
-      : `<div class="banner calm">✓ Nothing waits on you. Zoom out, breathe, pick a thread below.</div>`}
-  `;
-
-  // red lights get their own visible shelf — a rejection is a standing constraint
-  const lights = redLights.length
-    ? `<div class="section-title">Red lights — do not re-propose without answering the reason</div>` +
-      redLights
-        .map((d) => `<div class="redlight"><a href="/d/${d.id}">✕ ${esc(d.title)}</a> — ${esc(d.projectName)}<div class="why">${esc(d.reason ?? '')}</div></div>`)
-        .join('')
-    : '';
-
-  // zoom 1 — project cards, most recently active first; zoom 2 inside <details>
-  const activity = (name) => Math.max(...(byProject.get(name) ?? [{ createdAt: 0 }]).map((d) => d.createdAt));
-  const cards = projects
-    .sort((a, b) => activity(b.name) - activity(a.name))
-    .map((p) => {
-      const ds = (byProject.get(p.name) ?? []).sort((a, b) => b.createdAt - a.createdAt);
-      const hot = ds.filter(NEEDS).length;
-      return `<details class="project" ${hot ? 'open' : ''}>
-        <summary>
-          <span class="caret">›</span>
-          <span class="pname">${esc(p.name)}</span>
-          <span class="pmeta">${p.decisionCount} decision${p.decisionCount === 1 ? '' : 's'} · last ${when(activity(p.name))}</span>
-          ${hot ? `<span class="needs">${hot} needs you</span>` : ''}
-        </summary>
-        <div class="dlist">${ds
-          .map((d) => `<div class="drow">${chip(d.status)}<a href="/d/${d.id}">${esc(d.title)}</a><span class="when">${d.kind} · ${when(d.createdAt)}${d.versionCount > 1 ? ` · v${d.versionCount}` : ''}</span>${
-            d.reason && (d.status === 'rejected' || d.status === 'changes_requested') ? `<div class="reason">✕ ${esc(d.reason)}</div>` : ''
-          }</div>`)
-          .join('')}</div>
-      </details>`;
-    })
-    .join('');
-
-  app.innerHTML = decisions.length
-    ? `${topline}${lights}<div class="section-title">Projects — click to zoom in</div>${cards}`
-    : '<p class="empty">No decisions yet. Point an agent at the MCP endpoint and submit one.</p>';
-}
-
-render();
-// Live: any store event re-renders. A dropped stream costs staleness until
-// reload, never correctness — the truth is always re-fetched, not patched.
-new EventSource('/api/events').addEventListener('message', render);
+// Only the forks are live — the briefing above is authored. A dead store
+// degrades to the authored links in "Right now", never a blank page.
+try {
+  const res = await fetch('/api/decisions');
+  const decisions = (await res.json()).decisions ?? [];
+  const open = decisions.filter((d) => d.status === 'pending' || d.status === 'changes_requested');
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  document.getElementById('forks').innerHTML = open.length
+    ? open.map((d) => `<div class="fork"><a class="h" href="/d/${d.id}">${esc(d.title)}</a><span class="tag">${esc(d.projectName)} · ${d.status.replace('_', ' ')}${d.versionCount > 1 ? ` · v${d.versionCount}` : ''}</span><p>${d.reason ? `Your last note: “${esc(d.reason)}”` : 'Awaiting first read.'}</p></div>`).join('')
+    : '<div class="fork calm">✓ Nothing waits on your verdict. The next moves are #3 in “Right now”.</div>';
+} catch { /* authored content stands on its own */ }
 </script>
 </body>
 </html>

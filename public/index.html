@@ -151,8 +151,8 @@
 </head>
 <body>
 <header>
-  <div class="brand" onclick="route('/')">📚 Librarian <span>decision library</span></div>
-  <a href="/catchup.html" style="font-family: var(--mono); font-size: 0.75rem; color: var(--muted); text-decoration: none;">catchup ↗</a>
+  <div class="brand" onclick="location.href='/index.html'">📚 Librarian <span>decision library</span></div>
+  <a href="/" style="font-family: var(--mono); font-size: 0.75rem; color: var(--muted); text-decoration: none;">← catchup</a>
   <input type="search" id="q" placeholder="Search every decision — including the rejected ones…">
   <div class="filters" id="filters"></div>
 </header>
@@ -334,7 +334,7 @@ async function renderDecision(id) {
     : '';
 
   app.innerHTML = `
-    <a class="back" href="/" onclick="event.preventDefault(); route('/')">← library</a>
+    <a class="back" href="/index.html">← library</a>
     <h1 style="font-family: var(--sans); margin: 0.6rem 0 0.3rem;">${esc(d.title)}</h1>
     <div class="meta" style="margin-bottom: 1rem;">
       ${statusChip(d.status)}<span class="chip">${esc(d.kind)}</span>

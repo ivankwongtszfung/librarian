@@ -248,6 +248,11 @@ export function createApp(opts: HttpOptions): express.Express {
   });
 
   if (opts.publicDir) {
+    // The catchup briefing is the home page: a context-switching reviewer
+    // zooms out first, then drills into the library or a thread.
+    app.get('/', (_req: Request, res: Response) => {
+      res.sendFile('catchup.html', { root: opts.publicDir! });
+    });
     app.use(express.static(opts.publicDir));
     app.get('/d/:id', (_req: Request, res: Response) => {
       res.sendFile('index.html', { root: opts.publicDir! });
