@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DecisionDetail } from '../../src/domain/types.js';
-import { verdictToChannel } from '../../src/interfaces/mcp/channel.js';
+import { messageToChannel, verdictToChannel } from '../../src/interfaces/mcp/channel.js';
 
 function detail(over: Partial<DecisionDetail>): DecisionDetail {
   return {
@@ -59,5 +59,25 @@ describe('verdictToChannel', () => {
     expect(m.content).toContain('dec_x');
     expect(m.content).toContain('resubmit with parent_review_id');
     expect(m.meta.status).toBe('changes_requested');
+  });
+});
+
+describe('messageToChannel', () => {
+  it('carries the human text and the page context', () => {
+    const m = messageToChannel({
+      body: 'this table needs a diagram',
+      context: { page: '/d/dec_1', title: 'Session storage', decisionId: 'dec_1' },
+    });
+    expect(m.content).toContain('this table needs a diagram');
+    expect(m.content).toContain('page /d/dec_1');
+    expect(m.content).toContain('"Session storage"');
+    expect(m.content).toContain('typed into the review UI');
+    expect(m.meta).toEqual({ kind: 'ui_message', page: '/d/dec_1', decision_id: 'dec_1' });
+  });
+
+  it('works with no context at all', () => {
+    const m = messageToChannel({ body: 'hello' });
+    expect(m.content).toContain('hello');
+    expect(m.meta).toEqual({ kind: 'ui_message' });
   });
 });

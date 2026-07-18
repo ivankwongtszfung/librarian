@@ -1,6 +1,11 @@
 import { EventEmitter } from 'node:events';
 
-export type LibrarianEventType = 'decision.added' | 'decision.updated' | 'verdict' | 'comment';
+export type LibrarianEventType =
+  | 'decision.added'
+  | 'decision.updated'
+  | 'verdict'
+  | 'comment'
+  | 'message';
 
 export interface LibrarianEvent {
   type: LibrarianEventType;
@@ -8,6 +13,10 @@ export interface LibrarianEvent {
   projectName?: string;
   title?: string;
   status?: string;
+  /** 'message' events: the human's text, typed into a page's chat bar. */
+  body?: string;
+  /** 'message' events: where the human was when they said it. */
+  context?: Record<string, string>;
   at: number;
 }
 

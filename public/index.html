@@ -147,6 +147,15 @@
   .diff .del { color: var(--red); }
   .diff .hunk { color: var(--muted); }
   a.back { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); text-decoration: none; }
+
+  /* chat bar: speak to the agent from wherever you're reading */
+  body { padding-bottom: 76px; }
+  .chat { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); }
+  .chat .row { max-width: 62rem; margin: 0 auto; padding: 0.75rem 1.25rem; display: flex; gap: 0.55rem; align-items: center; }
+  .chat input { flex: 1; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.75rem; }
+  .chat button { font-family: var(--sans); font-weight: 600; font-size: 0.85rem; background: var(--green); color: #fff; border: 1px solid var(--green); border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; }
+  .chat .st { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 6rem; text-align: right; }
+  .chat .st.ok { color: var(--green-ink); }
 </style>
 </head>
 <body>
@@ -157,6 +166,11 @@
   <div class="filters" id="filters"></div>
 </header>
 <main id="app"><p class="empty">Loading…</p></main>
+<div class="chat"><div class="row">
+  <input id="chat-in" type="text" placeholder="Tell the agent something — this page's context rides along…">
+  <button id="chat-send">Send</button>
+  <span class="st" id="chat-st"></span>
+</div></div>
 
 <script type="module">
 const app = document.getElementById('app');
@@ -165,6 +179,9 @@ const STATUSES = ['all', 'pending', 'approved', 'rejected'];
 let filter = 'all';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// What the chat bar attaches to every message: where the human is standing.
+let pageCtx = { view: 'library' };
 
 // A deliberately small markdown renderer: enough for decision docs, no dependency.
 function md(src) {
@@ -283,6 +300,7 @@ function card(d) {
 }
 
 async function renderLibrary() {
+  pageCtx = { view: 'library' };
   const q = qBox.value.trim();
   const params = new URLSearchParams();
   if (q) params.set('q', q);
@@ -317,6 +335,7 @@ async function renderLibrary() {
 async function renderDecision(id) {
   const { body: d, status } = await api(`/decisions/${id}`);
   if (status !== 200) { app.innerHTML = '<p class="empty">Not found.</p>'; return; }
+  pageCtx = { view: 'decision', decisionId: id, title: d.title };
 
   const latest = d.versions[d.versions.length - 1];
   const pending = d.status === 'pending' || d.status === 'changes_requested';
@@ -436,6 +455,30 @@ window.addEventListener('popstate', render);
 new EventSource('/api/events').addEventListener('message', () => {
   if (!location.pathname.startsWith('/d/')) renderLibrary();
 });
+
+// Chat bar: send a message to the agent with this page's context attached.
+const chatIn = document.getElementById('chat-in');
+const chatSt = document.getElementById('chat-st');
+async function sendChat() {
+  const body = chatIn.value.trim();
+  if (!body) return;
+  chatSt.textContent = 'sending…'; chatSt.className = 'st';
+  const res = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body, context: { page: location.pathname, ...pageCtx } }),
+  }).catch(() => null);
+  if (res?.ok) {
+    const out = await res.json().catch(() => ({}));
+    chatIn.value = '';
+    chatSt.textContent = out.persisted ? '✓ agent + thread' : '✓ sent to agent';
+    chatSt.className = 'st ok';
+    if (out.persisted && location.pathname.startsWith('/d/')) render();
+  } else { chatSt.textContent = 'failed — daemon up?'; }
+  setTimeout(() => { chatSt.textContent = ''; }, 4000);
+}
+document.getElementById('chat-send').addEventListener('click', sendChat);
+chatIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 
 render();
 </script>
