@@ -228,6 +228,10 @@ function md(src) {
       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|#[^)\s]*|\/[^)\s]*)\)/g, '<a href="$2">$1</a>');
   }
 
+  // Markdown soft-wraps: an indented continuation line belongs to the list
+  // item above it — merge before list conversion so bullets stay whole.
+  text = text.replace(/\n[ \t]{2,}(?=\S)/g, ' ');
+
   text = inline(text
     .replace(/^### (.*)$/gm, '<h3>$1</h3>')
     .replace(/^## (.*)$/gm, '<h2>$1</h2>')
@@ -249,7 +253,7 @@ function md(src) {
   text = text.replace(/<(\/?)oli>/g, '<$1li>');
   text = text
     .split(/\n{2,}/)
-    .map((p) => (/^\s*<(h\d|ul|ol|pre|blockquote|table|div|hr)/.test(p.trim()) || /^ \d+ $/.test(p.trim()) ? p : `<p>${p.replace(/\n/g, '<br>')}</p>`))
+    .map((p) => (/^\s*<(h\d|ul|ol|pre|blockquote|table|div|hr)/.test(p.trim()) || /^ \d+ $/.test(p.trim()) ? p : `<p>${p.replace(/\n/g, ' ')}</p>`))
     .join('\n');
 
   return text.replace(/ (\d+) /g, (m, i) => blocks[Number(i)] ?? m);
