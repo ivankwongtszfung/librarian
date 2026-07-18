@@ -52,8 +52,9 @@ export class ReviewService {
     });
 
     // A revision reopens the same decision rather than minting a second one:
-    // the thread, not the document, is the unit of review.
-    if (!result.deduped) {
+    // the thread, not the document, is the unit of review. A reclaimed dedupe
+    // is a fresh pending review in an old row — announce it like a new one.
+    if (!result.deduped || result.reclaimed) {
       this.bus.emitEvent({
         type: 'decision.added',
         decisionId: result.decision.id,

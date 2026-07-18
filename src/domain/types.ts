@@ -152,6 +152,10 @@ export interface SubmitResult {
   version: Version;
   /** True when an existing decision with the same content was found and merged. */
   deduped: boolean;
+  /** True when the merge target's status had no verdict event behind it and a
+   *  gated submission converted it back to pending (ADR-008: review intent
+   *  beats dedup). */
+  reclaimed?: boolean;
 }
 
 export interface ConstraintItem {
