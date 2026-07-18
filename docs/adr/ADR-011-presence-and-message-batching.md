@@ -27,11 +27,14 @@ sequenceDiagram
 
 ## Decision
 
-1. **Presence comes from Claude Code hooks, not guesswork.** A `Stop` hook
-   reports idle; `UserPromptSubmit` / `PreToolUse` report working — each a
-   one-line `curl` to `POST /api/presence {state, session}`. Presence expires
-   (TTL ~2 min without a heartbeat → unknown), so a crashed session can never
-   hold the queue hostage.
+1. **Presence comes from two Claude Code hooks, not guesswork.**
+   `UserPromptSubmit` reports working; `Stop` reports idle — each a one-line
+   fire-and-forget `curl` to `POST /api/presence {state, session}`. **Two
+   loopback calls per turn, ~10 ms each, zero tokens** (hooks never touch the
+   model). `PreToolUse` was considered and rejected: it fires on every tool
+   call — hundreds of heartbeats a session for no better signal. Presence
+   expires (TTL ~2 min without a heartbeat → unknown), so a crashed session
+   can never hold the queue hostage.
 2. **Messages become durable rows.** A `messages` table (body, context,
    created_at, delivered_at) replaces fire-and-forget. This is the fix for
    tonight's silent loss: the UI can now say **"queued — agent busy"** or
@@ -52,13 +55,26 @@ sequenceDiagram
 - No cross-device queue — that is ADR-003's mailbox; this queue is loopback,
   same trust boundary as everything else.
 
+## Cost and setup — the two review questions, answered
+
+- **Token cost: zero, and batching is a net saving.** Hooks are local shell
+  commands; they never reach the model. The batching itself *reduces* token
+  spend: N separate mid-turn interruptions become one channel turn, so fewer
+  context injections per session.
+- **Runtime cost: two ~10 ms loopback curls per turn.** Nothing per tool call
+  (PreToolUse rejected above), nothing continuous.
+- **Setup: optional, automated, and safe to skip.** With no hooks installed,
+  presence reads unknown and behavior is exactly today's — nothing breaks for
+  a fresh user. Opting in is `librarian install --hooks`: it merges the two
+  entries into `~/.claude/settings.json` (never clobbers existing hooks) and
+  `librarian uninstall` removes them. No manual JSON editing, ever.
+
 ## Consequences
 
 - **Buys:** batched, polite delivery; zero message loss; an honest chat-bar
   status; and the `messages` table becomes the natural substrate if the
   ADR-003 outbox ever needs a local twin.
-- **Costs:** a hooks-install step (natural home: `librarian install` gains a
-  `--hooks` flag writing the three hook entries); one new table + endpoint;
+- **Costs:** one new table + one endpoint + the optional hooks installer;
   presence is best-effort — with hooks absent, behavior is exactly today's.
 
 ## Open questions for review
