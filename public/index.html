@@ -88,7 +88,18 @@
   .doc h1 { font-size: 1.5rem; } .doc h2 { font-size: 1.2rem; margin-top: 1.6rem; }
   .doc > *:first-child { margin-top: 0; }
   .doc table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-  .doc th, .doc td { border: 1px solid var(--line); padding: 0.4rem 0.6rem; text-align: left; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 0.45rem 0.65rem; text-align: left; vertical-align: top; }
+  .doc th { font-family: var(--sans); font-size: 0.78rem; letter-spacing: 0.03em; background: var(--code-bg); }
+  .doc tbody tr:nth-child(even) { background: color-mix(in srgb, var(--code-bg) 45%, transparent); }
+  .doc .tbl { overflow-x: auto; margin: 1rem 0; }
+  .doc h1, .doc h2, .doc h3 { text-wrap: balance; }
+  .doc h3 { font-size: 1.02rem; margin-top: 1.3rem; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 1.6rem 0; }
+  .doc blockquote { margin: 1rem 0; padding: 0.15rem 0 0.15rem 0.9rem; border-left: 3px solid var(--green); color: var(--muted); }
+  .doc ul, .doc ol { padding-left: 1.4rem; }
+  .doc li { margin: 0.3rem 0; }
+  .doc li::marker { color: var(--muted); font-family: var(--sans); font-size: 0.85em; }
+  .doc a { color: var(--green-ink); }
   .banner {
     border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1rem;
     font-family: var(--sans); font-size: 0.92rem;
@@ -151,24 +162,47 @@ function md(src) {
     return ` ${blocks.length - 1} `;
   });
 
-  text = text
+  // Pipe tables become real tables, before inline transforms touch the rows.
+  text = text.replace(
+    /(^|\n)(\|[^\n]+\|\n\|[ :\-|]+\|(?:\n\|[^\n]+\|)*)/g,
+    (_m, lead, tbl) => {
+      const rows = tbl.trim().split('\n').map((r) => r.replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim())));
+      const [head, , ...body] = rows;
+      const tr = (cells, tag) => `<tr>${cells.map((c) => `<${tag}>${c}</${tag}>`).join('')}</tr>`;
+      blocks.push(`<div class="tbl"><table><thead>${tr(head, 'th')}</thead><tbody>${body.map((r) => tr(r, 'td')).join('')}</tbody></table></div>`);
+      return `${lead} ${blocks.length - 1} `;
+    },
+  );
+
+  function inline(s) {
+    return s
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(?<![*\w])\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|#[^)\s]*|\/[^)\s]*)\)/g, '<a href="$2">$1</a>');
+  }
+
+  text = inline(text
     .replace(/^### (.*)$/gm, '<h3>$1</h3>')
     .replace(/^## (.*)$/gm, '<h2>$1</h2>')
     .replace(/^# (.*)$/gm, '<h1>$1</h1>')
-    .replace(/^&gt; (.*)$/gm, '<blockquote>$1</blockquote>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(?<![*\w])\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    .replace(/^(?:---+|\*\*\*+)$/gm, '<hr>')
+    .replace(/^&gt; (.*)$/gm, '<blockquote>$1</blockquote>'))
     .replace(/^[-*] (.*)$/gm, '<li>$1</li>')
-    .replace(/^\d+\. (.*)$/gm, '<li>$1</li>');
+    .replace(/^\d+\. (.*)$/gm, '<oli>$1</oli>');
 
+  // Numbered items keep their numbering: a decision's conditions are ordered.
+  // Wrap <ul> runs while ordered items are still <oli>, so the lazy <li> match
+  // cannot reach across an ordered block and swallow its numbering.
+  text = text.replace(/(<oli>[\s\S]*?<\/oli>)(?=\n{2,}|$)/g, '<ol>$1</ol>');
   text = text.replace(/(<li>[\s\S]*?<\/li>)(?=\n{2,}|$)/g, '<ul>$1</ul>');
+  text = text.replace(/<(\/?)oli>/g, '<$1li>');
   text = text
     .split(/\n{2,}/)
-    .map((p) => (/^\s*<(h\d|ul|pre|blockquote|table)/.test(p.trim()) || /^ \d+ $/.test(p.trim()) ? p : `<p>${p.replace(/\n/g, '<br>')}</p>`))
+    .map((p) => (/^\s*<(h\d|ul|ol|pre|blockquote|table|div|hr)/.test(p.trim()) || /^ \d+ $/.test(p.trim()) ? p : `<p>${p.replace(/\n/g, '<br>')}</p>`))
     .join('\n');
 
-  return text.replace(/ (\d+) /g, (_m, i) => blocks[Number(i)]);
+  return text.replace(/ (\d+) /g, (m, i) => blocks[Number(i)] ?? m);
 }
 
 function statusChip(s) { return `<span class="chip ${s}">${s.replace('_', ' ')}</span>`; }
