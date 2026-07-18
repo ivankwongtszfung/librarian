@@ -80,22 +80,31 @@
   .empty { color: var(--muted); font-style: italic; padding: 2rem 0; }
 
   /* detail */
-  .doc { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1.5rem; }
+  .doc { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 2rem 2.2rem; }
+  /* Editorial reading measure: prose stays ~65ch; tables and code may run wide. */
+  .doc > p, .doc > ul, .doc > ol, .doc > blockquote, .doc > h1, .doc > h2, .doc > h3 { max-width: 46rem; }
   .doc pre { background: var(--code-bg); padding: 0.9rem; border-radius: 6px; overflow-x: auto; font-size: 0.82rem; }
   .doc code { font-family: var(--mono); font-size: 0.85em; background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 4px; }
   .doc pre code { background: none; padding: 0; }
-  .doc h1, .doc h2, .doc h3 { font-family: var(--sans); line-height: 1.25; }
-  .doc h1 { font-size: 1.5rem; } .doc h2 { font-size: 1.2rem; margin-top: 1.6rem; }
+  .doc h1, .doc h2, .doc h3 { font-family: var(--sans); line-height: 1.22; }
+  .doc h1 { font-size: 1.7rem; letter-spacing: -0.015em; } .doc h2 { font-size: 1.15rem; margin-top: 2.2rem; }
   .doc > *:first-child { margin-top: 0; }
-  .doc table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  .doc table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
   .doc th, .doc td { border: 1px solid var(--line); padding: 0.45rem 0.65rem; text-align: left; vertical-align: top; }
-  .doc th { font-family: var(--sans); font-size: 0.78rem; letter-spacing: 0.03em; background: var(--code-bg); }
+  .doc th { font-family: var(--sans); font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); background: var(--code-bg); }
   .doc tbody tr:nth-child(even) { background: color-mix(in srgb, var(--code-bg) 45%, transparent); }
   .doc .tbl { overflow-x: auto; margin: 1rem 0; }
   .doc h1, .doc h2, .doc h3 { text-wrap: balance; }
   .doc h3 { font-size: 1.02rem; margin-top: 1.3rem; }
   .doc hr { border: 0; border-top: 1px solid var(--line); margin: 1.6rem 0; }
   .doc blockquote { margin: 1rem 0; padding: 0.15rem 0 0.15rem 0.9rem; border-left: 3px solid var(--green); color: var(--muted); }
+  /* Semantic callouts: a quote led by ⛔/⚠️/✅ is a status, not a citation. */
+  .doc blockquote.crit, .doc blockquote.warn, .doc blockquote.ok {
+    padding: 0.65rem 1rem; border-radius: 0 8px 8px 0; color: var(--ink); font-family: var(--sans); font-size: 0.93rem;
+  }
+  .doc blockquote.crit { border-left-color: var(--red); background: var(--red-soft); }
+  .doc blockquote.warn { border-left-color: var(--amber); background: var(--amber-soft); }
+  .doc blockquote.ok { border-left-color: var(--green); background: var(--green-soft); }
   .doc ul, .doc ol { padding-left: 1.4rem; }
   .doc li { margin: 0.3rem 0; }
   .doc li::marker { color: var(--muted); font-family: var(--sans); font-size: 0.85em; }
@@ -187,7 +196,11 @@ function md(src) {
     .replace(/^## (.*)$/gm, '<h2>$1</h2>')
     .replace(/^# (.*)$/gm, '<h1>$1</h1>')
     .replace(/^(?:---+|\*\*\*+)$/gm, '<hr>')
-    .replace(/^&gt; (.*)$/gm, '<blockquote>$1</blockquote>'))
+    .replace(/^&gt; (.*)$/gm, (_m, q) => {
+      // A quote led by a status emoji is a callout, not a citation.
+      const cls = /^(⛔|🔴|❗)/.test(q) ? ' class="crit"' : /^⚠/.test(q) ? ' class="warn"' : /^(✅|✔)/.test(q) ? ' class="ok"' : '';
+      return `<blockquote${cls}>${q}</blockquote>`;
+    }))
     .replace(/^[-*] (.*)$/gm, '<li>$1</li>')
     .replace(/^\d+\. (.*)$/gm, '<oli>$1</oli>');
 
@@ -236,9 +249,15 @@ async function renderLibrary() {
   const q = qBox.value.trim();
   const params = new URLSearchParams();
   if (q) params.set('q', q);
-  if (filter !== 'all') params.set('status', filter);
+  // "pending" is a promise to the reviewer — everything still waiting on
+  // someone. changes_requested is as unresolved as pending, so filter across
+  // both client-side instead of matching one exact status server-side.
+  if (filter === 'approved' || filter === 'rejected') params.set('status', filter);
   const { body } = await api(`/decisions?${params}`);
-  const decisions = body.decisions ?? [];
+  let decisions = body.decisions ?? [];
+  if (filter === 'pending') {
+    decisions = decisions.filter((d) => d.status === 'pending' || d.status === 'changes_requested');
+  }
 
   document.getElementById('filters').innerHTML = STATUSES
     .map((s) => `<button class="${s === filter ? 'on' : ''}" onclick="setFilter('${s}')">${s}</button>`)
