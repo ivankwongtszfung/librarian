@@ -36,15 +36,30 @@ export function migrate(db: Db): void {
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    db.transaction(() => {
-      db.exec(sql);
-      db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(
-        file,
-        Date.now(),
-      );
-    })();
+  const pending = files.filter((f) => !applied.has(f));
+  if (!pending.length) return;
+
+  // Table-rebuild migrations (the only way SQLite widens a CHECK) must run
+  // with FKs off — with them on, DROP TABLE cascade-deletes child rows. The
+  // pragma cannot change inside a transaction, so it brackets the loop, and
+  // foreign_key_check afterwards proves the dance left every reference intact.
+  db.pragma('foreign_keys = OFF');
+  try {
+    for (const file of pending) {
+      const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+      db.transaction(() => {
+        db.exec(sql);
+        db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(
+          file,
+          Date.now(),
+        );
+      })();
+    }
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+  const violations = db.pragma('foreign_key_check') as unknown[];
+  if (violations.length) {
+    throw new Error(`migration left ${violations.length} dangling foreign key reference(s)`);
   }
 }

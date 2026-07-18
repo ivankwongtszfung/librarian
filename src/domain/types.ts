@@ -1,4 +1,4 @@
-export type DecisionKind = 'plan' | 'adr' | 'prd' | 'arch';
+export type DecisionKind = 'plan' | 'adr' | 'prd' | 'arch' | 'bug';
 
 export type DecisionStatus =
   | 'pending'
