@@ -231,9 +231,21 @@ const OPEN = (d) => d.status === 'pending' || d.status === 'changes_requested';
 // someone" — pending + changes_requested, same as the library page.
 const STATUSES = ['all', 'pending', 'approved', 'rejected'];
 let filter = 'all';
-const MATCHES = (d) =>
-  filter === 'all' ? true : filter === 'pending' ? OPEN(d) : d.status === filter;
 window.setFilter = (s) => { filter = s; renderLive(); };
+
+// Time filter: the mess-cutter. Defaults to the last week — stale imports
+// and old vendor docs fall out of view; "all" is one click away. Open
+// reviews are never time-hidden: something waiting on you never expires.
+const RANGES = [
+  ['week', 7], ['month', 30], ['3 months', 91], ['year', 365], ['all', Infinity],
+];
+let range = 'week';
+window.setRange = (r) => { range = r; renderLive(); };
+const days = () => (RANGES.find(([k]) => k === range) ?? RANGES[4])[1];
+const INRANGE = (ts) => Date.now() - ts < days() * 86_400_000;
+const MATCHES = (d) =>
+  (filter === 'all' ? true : filter === 'pending' ? OPEN(d) : d.status === filter) &&
+  (OPEN(d) || INRANGE(d.createdAt));
 
 async function renderLive() {
   try {
@@ -266,9 +278,10 @@ async function renderLive() {
     }
     const activity = (name) => Math.max(...(byProject.get(name) ?? [{ createdAt: 0 }]).map((d) => d.createdAt));
 
-    document.getElementById('filters').innerHTML = STATUSES
-      .map((s) => `<button class="${s === filter ? 'on' : ''}" onclick="setFilter('${s}')">${s}</button>`)
-      .join('');
+    document.getElementById('filters').innerHTML =
+      RANGES.map(([k]) => `<button class="${k === range ? 'on' : ''}" onclick="setRange('${k}')">${k === 'all' ? 'all time' : `last ${k}`}</button>`).join('') +
+      '<span style="width:12px"></span>' +
+      STATUSES.map((s) => `<button class="${s === filter ? 'on' : ''}" onclick="setFilter('${s}')">${s}</button>`).join('');
 
     document.getElementById('projects').innerHTML = projects
       .sort((a, b) => activity(b.name) - activity(a.name))
@@ -276,9 +289,9 @@ async function renderLive() {
         const ds = (byProject.get(p.name) ?? [])
           .filter(MATCHES)
           .sort((a, b) => (OPEN(b) ? 1 : 0) - (OPEN(a) ? 1 : 0) || b.createdAt - a.createdAt);
-        if (!ds.length && filter !== 'all') return '';
+        if (!ds.length) return '';
         const hot = ds.filter(OPEN).length;
-        return `<details class="project" ${hot || filter !== 'all' ? 'open' : ''}>
+        return `<details class="project" ${hot || range !== 'all' || filter !== 'all' ? 'open' : ''}>
           <summary><a class="pname" href="/p/${encodeURIComponent(p.name)}" style="color:inherit">${esc(p.name)}</a>
             <span class="pmeta">${p.decisionCount} decision${p.decisionCount === 1 ? '' : 's'} · last ${when(activity(p.name))}</span>
             ${hot ? `<span class="needs">${hot} waiting on you</span>` : ''}</summary>
@@ -288,7 +301,7 @@ async function renderLive() {
         </details>`;
       })
       .join('')
-      + (filter === 'all' && observed.length
+      + (filter === 'all' && range === 'all' && observed.length
         ? `<div class="pmeta" style="margin:16px 2px 6px">seen in sessions, nothing recorded yet — librarian is blind here:</div>` +
           observed.map((o) => `<div class="fork"><span class="pname" style="color:var(--faint)">${esc(o.name)}</span><span class="tag">no decisions · active ${when(o.lastActivity)}</span><p>Use librarian tools there (submit_for_review / record_decision) or approve a plan — the watcher captures from now forward, it never replays history.</p></div>`).join('')
         : '');
