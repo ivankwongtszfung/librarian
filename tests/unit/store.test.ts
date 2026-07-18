@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { VerdictError } from '../../src/domain/state-machine.js';
-import { openDb } from '../../src/store/db.js';
-import { Repository } from '../../src/store/repository.js';
+import { openDb } from '../../src/infrastructure/store/db.js';
+import { Repository } from '../../src/infrastructure/store/repository.js';
 import { contentHash } from '../../src/util/ids.js';
 
 function repo(): Repository {

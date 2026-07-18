@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { MAX_WAIT_SECONDS, type ReviewService } from '../core/review-service.js';
-import type { DecisionStore } from '../domain/ports.js';
-import type { DecisionKind, DecisionStatus } from '../domain/types.js';
+import { MAX_WAIT_SECONDS, type ReviewService } from '../../application/review-service.js';
+import type { DecisionStore } from '../../domain/ports.js';
+import type { DecisionKind, DecisionStatus } from '../../domain/types.js';
 
 const KIND = z.enum(['plan', 'adr', 'prd', 'arch']);
 const STATUS = z.enum(['pending', 'changes_requested', 'approved', 'rejected', 'superseded']);

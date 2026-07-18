@@ -6,9 +6,9 @@ import { After, Before, setWorldConstructor } from '@cucumber/cucumber';
 import { World } from '@cucumber/cucumber';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { LibrarianEvent } from '../../src/core/events.js';
-import { MemoryNotifier } from '../../src/core/notifier.js';
-import { type Daemon, startDaemon } from '../../src/daemon.js';
+import type { LibrarianEvent } from '../../src/application/events.js';
+import { MemoryNotifier } from '../../src/infrastructure/notify/notifier.js';
+import { type Daemon, startDaemon } from '../../src/main/daemon.js';
 
 /**
  * The BDD world drives a real daemon over real HTTP with a real MCP client —
@@ -89,7 +89,7 @@ export class LibrarianWorld extends World {
       [
         '--import',
         'tsx',
-        'src/cli.ts',
+        'src/main/cli.ts',
         'wait',
         reviewId,
         '--url',

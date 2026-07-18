@@ -2,8 +2,8 @@
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { parseDuration } from '../util/duration.js';
 import { startDaemon } from './daemon.js';
-import { parseDuration } from './util/duration.js';
 import { waitForVerdict } from './wait.js';
 
 function arg(name: string, fallback?: string): string | undefined {

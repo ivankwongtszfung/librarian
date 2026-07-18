@@ -1,14 +1,5 @@
-export interface Notification {
-  title: string;
-  body: string;
-  decisionId: string;
-  url?: string;
-}
-
-export interface Notifier {
-  publish(n: Notification): Promise<void>;
-  sent(): readonly Notification[];
-}
+import type { Notifier } from '../../domain/ports.js';
+import type { Notification } from '../../domain/types.js';
 
 /** Used when no ntfy topic is configured, and by the test suite. */
 export class MemoryNotifier implements Notifier {

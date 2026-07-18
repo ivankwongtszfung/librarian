@@ -4,6 +4,7 @@ import type {
   Decision,
   DecisionDetail,
   DecisionStatus,
+  Notification,
   Participant,
   ParticipantType,
   Project,
@@ -50,4 +51,10 @@ export interface DecisionStore {
   getSessionDecisions(sessionId: string): Decision[];
   search(query: string, filters?: SearchFilters): SearchHit[];
   constraints(project: string, topic?: string): Constraints;
+}
+
+/** Push-notification sink — the daemon's outbound alert channel (ntfy today). */
+export interface Notifier {
+  publish(n: Notification): Promise<void>;
+  sent(): readonly Notification[];
 }

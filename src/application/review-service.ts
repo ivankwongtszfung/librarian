@@ -1,4 +1,4 @@
-import type { DecisionStore } from '../domain/ports.js';
+import type { DecisionStore, Notifier } from '../domain/ports.js';
 import { VerdictError } from '../domain/state-machine.js';
 import { isResolved } from '../domain/types.js';
 import type {
@@ -9,7 +9,6 @@ import type {
 } from '../domain/types.js';
 import { unifiedDiff } from '../util/diff.js';
 import type { EventBus } from './events.js';
-import type { Notifier } from './notifier.js';
 
 export const MAX_WAIT_SECONDS = 50;
 
