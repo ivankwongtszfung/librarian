@@ -81,7 +81,10 @@ export async function runChannel(): Promise<void> {
   const mcp = new Server(
     { name: 'librarian-channel', version: '0.1.0' },
     {
-      capabilities: { tools: {}, experimental: { 'claude/channel': {} } },
+      // Push-only: we register no tools, so we do NOT advertise a `tools`
+      // capability — doing so makes the client call tools/list and fail
+      // ("tools fetch failed"). Only the channel capability is ours to claim.
+      capabilities: { experimental: { 'claude/channel': {} } },
       instructions: INSTRUCTIONS,
     },
   );
