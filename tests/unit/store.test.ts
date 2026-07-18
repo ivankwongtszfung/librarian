@@ -408,6 +408,18 @@ describe('projectCatchup', () => {
     expect(item.reason).toBeNull();
     expect(item.tldr).toBe('This is the gist.');
   });
+
+  it('skips the metadata row in both ADR and bug doc formats', () => {
+    r.submit({
+      project: 'acct',
+      title: 'A bug',
+      body: '# A bug\nKind: bug · Severity: medium · Date: 2026-07-18\n\nTotals drift by a cent.',
+      kind: 'bug',
+      source: 'mcp',
+    });
+    const c = r.projectCatchup('acct');
+    expect(c.rightNow[0].tldr).toBe('Totals drift by a cent.');
+  });
 });
 
 function repoFactoryForBug(): Repository {
