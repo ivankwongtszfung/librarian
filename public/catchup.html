@@ -278,8 +278,12 @@ async function sendChat() {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ body, context: { page: location.pathname, view: 'catchup' } }),
   }).catch(() => null);
-  if (res?.ok) { input.value = ''; st.textContent = '✓ sent to agent'; st.className = 'st ok'; }
-  else { st.textContent = 'failed — is the daemon up?'; }
+  if (res?.ok) {
+    const out = await res.json().catch(() => ({}));
+    input.value = '';
+    st.textContent = out.queued ? '✓ queued — agent busy' : '✓ sent to agent';
+    st.className = 'st ok';
+  } else { st.textContent = 'failed — is the daemon up?'; }
   setTimeout(() => { st.textContent = ''; }, 4000);
 }
 document.getElementById('chat-send').addEventListener('click', sendChat);
