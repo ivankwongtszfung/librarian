@@ -1,5 +1,5 @@
-import type { DecisionStore } from '../domain/ports.js';
-import { assertTransition } from '../domain/state-machine.js';
+import type { DecisionStore } from '../../domain/ports.js';
+import { assertTransition } from '../../domain/state-machine.js';
 import type {
   Comment,
   Decision,
@@ -18,8 +18,8 @@ import type {
   SubmitResult,
   VerdictEvent,
   Version,
-} from '../domain/types.js';
-import { contentHash, newId, now } from '../util/ids.js';
+} from '../../domain/types.js';
+import { contentHash, newId, now } from '../../util/ids.js';
 import type { Db } from './db.js';
 
 interface DecisionRow {

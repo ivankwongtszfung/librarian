@@ -1,5 +1,5 @@
-import type { DecisionStatus } from './domain/types.js';
-import { isResolved } from './domain/types.js';
+import type { DecisionStatus } from '../domain/types.js';
+import { isResolved } from '../domain/types.js';
 
 export interface WaitOptions {
   reviewId: string;

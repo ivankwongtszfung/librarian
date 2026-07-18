@@ -1,13 +1,14 @@
 import type { Server } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EventBus } from './core/events.js';
-import { MemoryNotifier, type Notifier, NtfyNotifier } from './core/notifier.js';
-import { ReviewService } from './core/review-service.js';
-import { createApp } from './http/server.js';
-import { type Db, openDb } from './store/db.js';
-import { Repository } from './store/repository.js';
-import { TranscriptWatcher } from './watcher/watcher.js';
+import { EventBus } from '../application/events.js';
+import { ReviewService } from '../application/review-service.js';
+import type { Notifier } from '../domain/ports.js';
+import { MemoryNotifier, NtfyNotifier } from '../infrastructure/notify/notifier.js';
+import { type Db, openDb } from '../infrastructure/store/db.js';
+import { Repository } from '../infrastructure/store/repository.js';
+import { TranscriptWatcher } from '../infrastructure/watcher/watcher.js';
+import { createApp } from '../interfaces/http/server.js';
 
 export interface DaemonOptions {
   dbPath: string;
@@ -34,7 +35,7 @@ export interface Daemon {
   stop(): Promise<void>;
 }
 
-const DEFAULT_PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
+const DEFAULT_PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
 
 /** Loopback addresses need no token; anything else is reachable by others. */
 function isLoopback(host: string): boolean {

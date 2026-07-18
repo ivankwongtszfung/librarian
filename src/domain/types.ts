@@ -167,3 +167,10 @@ export interface Constraints {
   accepted: ConstraintItem[];
   rejected: ConstraintItem[];
 }
+
+export interface Notification {
+  title: string;
+  body: string;
+  decisionId: string;
+  url?: string;
+}

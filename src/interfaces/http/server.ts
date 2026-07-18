@@ -1,11 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import type { EventBus } from '../core/events.js';
-import type { ReviewService } from '../core/review-service.js';
-import type { DecisionStore } from '../domain/ports.js';
-import { VerdictError } from '../domain/state-machine.js';
-import type { DecisionKind, DecisionStatus } from '../domain/types.js';
+import type { EventBus } from '../../application/events.js';
+import type { ReviewService } from '../../application/review-service.js';
+import type { DecisionStore } from '../../domain/ports.js';
+import { VerdictError } from '../../domain/state-machine.js';
+import type { DecisionKind, DecisionStatus } from '../../domain/types.js';
 import { createMcpServer } from '../mcp/server.js';
 
 export interface HttpOptions {

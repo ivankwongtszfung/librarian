@@ -2,8 +2,8 @@ import { createReadStream, statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 import chokidar, { type FSWatcher } from 'chokidar';
-import type { EventBus } from '../core/events.js';
-import type { DecisionStore } from '../domain/ports.js';
+import type { EventBus } from '../../application/events.js';
+import type { DecisionStore } from '../../domain/ports.js';
 import {
   type CapturedDoc,
   type Line as TranscriptLine,

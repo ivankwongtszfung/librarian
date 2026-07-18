@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import type { DecisionKind } from '../domain/types.js';
+import type { DecisionKind } from '../../domain/types.js';
 
 /**
  * Extractors for Claude Code's transcript JSONL.

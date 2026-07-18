@@ -5,19 +5,19 @@
   "type": "module",
   "license": "MIT",
   "bin": {
-    "librarian": "./dist/cli.js"
+    "librarian": "./dist/main/cli.js"
   },
   "main": "./dist/index.js",
   "engines": {
     "node": ">=20.11"
   },
-  "files": ["dist", "src/store/migrations", "public", "README.md", "LICENSE"],
+  "files": ["dist", "src/infrastructure/store/migrations", "public", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run build:assets",
-    "build:assets": "node -e \"require('node:fs').cpSync('src/store/migrations','dist/store/migrations',{recursive:true})\"",
+    "build:assets": "node -e \"require('node:fs').cpSync('src/infrastructure/store/migrations','dist/infrastructure/store/migrations',{recursive:true})\"",
     "prepare": "npm run build",
-    "dev": "tsx watch src/cli.ts",
-    "start": "node dist/cli.js",
+    "dev": "tsx watch src/main/cli.ts",
+    "start": "node dist/main/cli.js",
     "test": "vitest run && cucumber-js",
     "test:unit": "vitest run",
     "test:watch": "vitest",

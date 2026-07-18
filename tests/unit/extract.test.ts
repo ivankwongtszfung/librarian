@@ -8,7 +8,7 @@ import {
   parseLine,
   projectNameFromFilePath,
   titleFromMarkdown,
-} from '../../src/watcher/extract.js';
+} from '../../src/infrastructure/watcher/extract.js';
 
 // These fixtures mirror the real shapes found in Claude Code transcripts.
 

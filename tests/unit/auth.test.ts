@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type Daemon, startDaemon } from '../../src/daemon.js';
+import { type Daemon, startDaemon } from '../../src/main/daemon.js';
 
 // Regression guards for the threat-model findings F2 (/mcp was ungated) and
 // F3 (token optional / non-constant-time / accepted in the query string).
