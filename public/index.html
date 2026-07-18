@@ -148,6 +148,17 @@
   .diff .hunk { color: var(--muted); }
   a.back { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); text-decoration: none; }
 
+  /* per-project catchup strip */
+  .topline { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0 0 1rem; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+          padding: 0.5rem 0.9rem; font-family: var(--sans); }
+  .stat b { display: block; font-size: 1.25rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--muted); font-family: var(--mono); font-size: 0.65rem; }
+  .stat.hot { border-color: var(--amber); background: var(--amber-soft); }
+  .stat.hot b { color: var(--amber); }
+  .stat.bad { border-color: var(--red); background: var(--red-soft); }
+  .stat.bad b { color: var(--red); }
+
   /* chat bar: speak to the agent from wherever you're reading */
   body { padding-bottom: 76px; }
   .chat { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); }
@@ -327,8 +338,23 @@ async function renderLibrary(project) {
   const needsYou = decisions.filter((d) => d.status === 'pending' || d.status === 'changes_requested');
   const rest = decisions.filter((d) => !needsYou.includes(d));
 
+  // A project page is a mini-catchup: the numbers first, then the threads.
+  // The strip only renders on the unfiltered view, where the numbers are true.
+  const strip = project && !q && filter === 'all'
+    ? (() => {
+        const red = decisions.filter((d) => d.status === 'rejected');
+        const last = decisions.length ? Math.max(...decisions.map((d) => d.createdAt)) : null;
+        return `<div class="topline">
+          <div class="stat ${needsYou.length ? 'hot' : ''}"><b>${needsYou.length}</b><small>needs you</small></div>
+          <div class="stat ${red.length ? 'bad' : ''}"><b>${red.length}</b><small>red lights</small></div>
+          <div class="stat"><b>${decisions.length}</b><small>decisions</small></div>
+          ${last ? `<div class="stat"><b>${when(last)}</b><small>last activity</small></div>` : ''}
+        </div>`;
+      })()
+    : '';
+
   app.innerHTML =
-    (project ? `<div class="section-title">project · ${esc(project)} — <a href="/index.html" style="color:inherit">all projects</a></div>` : '') +
+    (project ? `<div class="section-title">project catchup · ${esc(project)} — <a href="/index.html" style="color:inherit">all projects</a></div>${strip}` : '') +
     (needsYou.length && !q ? `<div class="section-title">Needs you — ${needsYou.length}</div>${needsYou.map(card).join('')}` : '') +
     (rest.length ? `<div class="section-title">${q ? 'Results' : project ? `${esc(project)} — decisions` : 'Library'}</div>${rest.map(card).join('')}` : '') +
     (q && needsYou.length ? needsYou.map(card).join('') : '');
