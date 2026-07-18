@@ -13,7 +13,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="60">
+<!-- No meta refresh: the page is live via SSE, and a hard reload while the
+     human is typing into the chat bar destroys their draft. -->
+
 <title>Librarian — catchup</title>
 <style>
   :root{
@@ -279,6 +281,14 @@ new EventSource('/api/events').addEventListener('message', renderLive);
 // Chat bar: send a message to the agent with this page's context attached.
 const input = document.getElementById('chat-in');
 const st = document.getElementById('chat-st');
+
+// The draft belongs to the human, not the page lifecycle: it survives
+// reloads, daemon restarts, and browser restarts until it is sent.
+const DRAFT_KEY = `librarian.draft:${location.pathname}`;
+try { input.value = localStorage.getItem(DRAFT_KEY) ?? ''; } catch { /* private mode */ }
+input.addEventListener('input', () => {
+  try { localStorage.setItem(DRAFT_KEY, input.value); } catch { /* best effort */ }
+});
 async function sendChat() {
   const body = input.value.trim();
   if (!body) return;
@@ -296,6 +306,7 @@ async function sendChat() {
   if (res?.ok) {
     const out = await res.json().catch(() => ({}));
     input.value = '';
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* best effort */ }
     st.textContent = out.queued
       ? '✓ queued — agent busy'
       : out.persisted ? '✓ agent + thread' : '✓ sent to agent';
