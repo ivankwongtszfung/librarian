@@ -1,6 +1,6 @@
 # ADR-011: Presence and patience — queue messages while the agent works, flush when it's free
 
-**Status:** proposed · **Date:** 2026-07-18 · **Project:** librarian · **Read time:** ~3 min
+**Status:** accepted (2026-07-18, review `dec_57497c931ec34176a45a`; implementation PR #21) · **Date:** 2026-07-18 · **Project:** librarian · **Read time:** ~3 min
 
 ## TL;DR
 
