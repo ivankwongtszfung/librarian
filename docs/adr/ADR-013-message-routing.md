@@ -28,26 +28,40 @@ flowchart TD
 2. **A session declares its project.** The channel server learns it from its
    launch working directory (basename of `cwd`), overridable by
    `LIBRARIAN_PROJECT`, and reports it on the presence heartbeat (ADR-011).
-3. **Filtering is client-side, in each channel.** Each channel server forwards a
-   message to its agent only when `message.project` is null (global) or equals
-   its own project. This respects the one-session-one-channel model — no daemon
-   session registry, no fan-out logic — and a session simply ignores what isn't
-   its business.
+3. **The channel declares its project on the SSE connection; the daemon filters
+   per-connection.** The channel server opens `/api/events` with a header
+   `x-librarian-project: <its project>`. The daemon's SSE handler already gives
+   every connection its own writer and its own listener closure — routing is a
+   one-line filter inside that closure: a `message` with a `project` is written
+   only to connections whose declared project matches; a global message (no
+   project) goes to all. No registry, no bookkeeping — the connection's listener
+   *is* the per-session state, and its `req.on('close')` cleanup already exists.
+
+       app.get('/api/events', (req, res) => {
+         const mine = req.header('x-librarian-project');
+         const onEvent = (e) => {
+           if (e.type === 'message' && e.project && mine && e.project !== mine) return;
+           res.write(`data: ${JSON.stringify(e)}\n\n`);
+         };
+         bus.on('event', onEvent);
+         req.on('close', () => bus.off('event', onEvent));
+       });
+
 4. **Undeliverable ≠ lost.** A targeted message with no matching connected
    session stays undelivered in the `messages` table (ADR-011). It flushes when
    a session for that project connects, and the catchup surfaces "N messages
    waiting for a *project* session" so the human knows it's parked, not gone.
 
-## Why client-side filtering
+## Why per-connection server-side filtering (v2 correction)
 
-The alternative — the daemon tracking which live session serves which project
-and unicasting — needs a session registry, connect/disconnect bookkeeping, and
-a fan-out policy for "two accounting_app sessions." Client-side filtering needs
-none of it: the daemon broadcasts (as it does now), and each channel already
-runs per-session, so it is the natural place to know "am I the right recipient?"
-The cost is every channel sees every message's *envelope* — acceptable on a
-loopback box (same trust boundary as everything else), and the body still only
-becomes an agent turn for the matched session.
+v1 chose *client-side* filtering (broadcast to all, each channel drops what
+isn't its project) and argued against server-side routing because it "needs a
+session registry and connect/disconnect bookkeeping." **That was wrong for SSE.**
+Each `/api/events` connection already has its own listener closure and its own
+`close` cleanup, so per-connection filtering needs no registry at all — it is
+the same amount of code as client-side, and strictly better: a session only ever
+receives *its own* messages on the wire, not everyone's. The reviewer's "how,
+technically?" question surfaced this; v2 adopts it.
 
 ## What this is not
 
