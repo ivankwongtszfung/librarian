@@ -1,6 +1,6 @@
 # ADR-009: Mermaid replaces ASCII diagrams in decision docs
 
-**Status:** proposed · **Date:** 2026-07-17 · **Project:** librarian · **Read time:** ~4 min
+**Status:** proposed (implementation shipped in PR #11 — approve to ratify, reject to revert) · **Date:** 2026-07-17 · **Project:** librarian · **Read time:** ~4 min
 
 ## TL;DR
 
@@ -42,9 +42,11 @@ flowchart TD
     style R stroke:#1B7A4A,color:#1B7A4A
 ```
 
-On GitHub and in artifacts this renders as a real diagram today. In the review
-UI it shows as source until the rendering below ships — which is the honest
-demonstration of why the crux is part of the decision.
+**This renders as a real SVG right here in the review UI** — the rendering
+shipped with this ADR's implementation (PR #11), alongside GitHub and
+artifacts, which render mermaid natively. If you are seeing raw text instead,
+that is a bug: report it, the design's contract is diagram-or-visible-source,
+never silent breakage.
 
 ## Decision
 
@@ -60,8 +62,8 @@ demonstration of why the crux is part of the decision.
    - Render failure degrades to what happens today: the source in a code
      fence, labeled as a diagram. A broken diagram never hides the doc.
 3. **Migrate the three existing ASCII diagrams** (ADR-007's pull→push fates and
-   trust boundary; ADR-008's capture race) in one pass, verifying each in the
-   review UI, on GitHub, and in an artifact.
+   trust boundary; ADR-008's capture race) in one pass. *Done in PR #11 —
+   ADR-007 v4 verified rendering both as themed SVG in the review UI.*
 4. **Authoring rule going forward:** if a diagram describes structure, it is
    Mermaid. ASCII survives only inside code fences that are literally about
    text layout (log excerpts, CLI output).
@@ -70,16 +72,16 @@ demonstration of why the crux is part of the decision.
 
 | Option | Verdict |
 |---|---|
-| **Vendored mermaid, lazy-loaded** | **Chosen** — offline-safe, no verdict-surface supply chain, ~2 MB in the repo is the whole cost |
+| **Vendored mermaid, lazy-loaded** | **Chosen** — offline-safe, no verdict-surface supply chain; measured cost: 3.4 MB in the repo (mermaid@11.16.0) |
 | CDN `<script>` + SRI pin | Rejected: breaks offline, and the verdict surface should load zero remote code — SRI mitigates but the dependency remains |
 | Keep ASCII everywhere | Rejected: fragile authoring, bad diffs, hostile to every renderer except monospace |
 | Server-side render to SVG at submit time | Rejected for now: adds a daemon dependency and a build step for a browser-solvable problem; revisit if a non-browser surface (export, iOS) needs diagrams |
 
 ## Consequences
 
-- **Costs:** ~2 MB vendored asset in repo and npm package; one more thing to
-  version-bump (pinned, deliberate updates only); docs with diagrams render a
-  beat slower on first open (lazy load).
+- **Costs:** 3.4 MB vendored asset in repo and npm package (measured, vs the
+  ~2 MB estimated); one more thing to version-bump (pinned, deliberate updates
+  only); docs with diagrams render a beat slower on first open (lazy load).
 - **Buys:** diagrams become editable data instead of art; the same doc renders
   correctly in all four places it lives (review UI, GitHub, artifacts, export);
   agents can revise diagrams without redrawing them.
