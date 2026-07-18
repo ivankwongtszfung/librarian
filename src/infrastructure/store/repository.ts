@@ -138,22 +138,20 @@ export class Repository implements DecisionStore {
         ? this.upsertSession(project.id, input.agent ?? null, input.sessionRef)
         : null;
 
-      const existing = this.db
-        .prepare('SELECT * FROM decisions WHERE content_hash = ?')
-        .get(hash) as DecisionRow | undefined;
-
-      if (existing) {
-        this.recordProvenance(existing.id, input.source, input.sessionRef ?? null);
-        const version = this.latestVersion(existing.id)!;
-        return { decision: this.rowToDecision(existing), version, deduped: true };
-      }
-
       // A revision is a new version of the same decision, not a new decision:
       // the thread — doc, comments, verdicts, and the red light that prompted
-      // the rewrite — is the unit of review, and it has to stay whole.
+      // the rewrite — is the unit of review, and it has to stay whole. The
+      // thread also beats the content hash: the watcher races submissions on
+      // the transcript, and if dedup ran first, its capture of this same text
+      // would swallow the revision (ADR-008).
       if (input.parentDecisionId) {
         const parent = this.getDecision(input.parentDecisionId);
         if (parent) {
+          if (parent.contentHash === hash) {
+            // Identical resubmit: nothing new to review.
+            this.recordProvenance(parent.id, input.source, input.sessionRef ?? null);
+            return { decision: parent, version: this.latestVersion(parent.id)!, deduped: true };
+          }
           const parentVersion = this.latestVersion(parent.id);
           const version = this.addVersion(
             parent.id,
@@ -173,15 +171,76 @@ export class Repository implements DecisionStore {
             });
           }
 
-          // Dedupe should track the current body, not the one that was rejected.
-          this.db
-            .prepare('UPDATE decisions SET content_hash = ? WHERE id = ?')
-            .run(hash, parent.id);
+          // Dedupe should track the current body, not the one that was
+          // rejected — unless another decision already holds this hash (a
+          // watcher capture of the same text). The thread still wins; a stale
+          // hash is the lesser harm.
+          const holder = this.db
+            .prepare('SELECT id FROM decisions WHERE content_hash = ?')
+            .get(hash) as { id: string } | undefined;
+          if (!holder) {
+            this.db
+              .prepare('UPDATE decisions SET content_hash = ? WHERE id = ?')
+              .run(hash, parent.id);
+          }
           this.recordProvenance(parent.id, input.source, input.sessionRef ?? null);
           this.syncFts(parent.id);
 
           return { decision: this.getDecision(parent.id)!, version, deduped: false };
         }
+      }
+
+      const existing = this.db
+        .prepare('SELECT * FROM decisions WHERE content_hash = ?')
+        .get(hash) as DecisionRow | undefined;
+
+      if (existing) {
+        this.recordProvenance(existing.id, input.source, input.sessionRef ?? null);
+        const version = this.latestVersion(existing.id)!;
+        const decision = this.rowToDecision(existing);
+
+        // A gated submission claims a human review is owed. If the matching
+        // row's status was never backed by a verdict event (the watcher
+        // asserts 'approved' with none — ADR-008), the claim wins: reclaim
+        // the row for review instead of silently inheriting the status.
+        const gated = !input.initialStatus;
+        const open = decision.status === 'pending' || decision.status === 'changes_requested';
+        if (gated && !open) {
+          const backed =
+            (
+              this.db
+                .prepare('SELECT COUNT(*) AS n FROM verdict_events WHERE decision_id = ?')
+                .get(existing.id) as { n: number }
+            ).n > 0;
+          if (!backed) {
+            const participant = this.upsertParticipant('agent', input.agent ?? 'agent');
+            this.db
+              .prepare(
+                `INSERT INTO verdict_events (id, decision_id, from_state, to_state, participant_id, reason, at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .run(
+                newId('vrd'),
+                existing.id,
+                decision.status,
+                'pending',
+                participant.id,
+                'reclaimed for review: no verdict backed this status',
+                now(),
+              );
+            this.db
+              .prepare('UPDATE decisions SET status = ?, decided_at = NULL WHERE id = ?')
+              .run('pending', existing.id);
+            this.syncFts(existing.id);
+            return {
+              decision: this.getDecision(existing.id)!,
+              version,
+              deduped: true,
+              reclaimed: true,
+            };
+          }
+        }
+        return { decision, version, deduped: true };
       }
 
       const decision: Decision = {

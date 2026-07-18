@@ -209,3 +209,95 @@ describe('repository', () => {
     expect(r.search('redis')).toHaveLength(1);
   });
 });
+
+// ADR-008 regression suite: the watcher races submissions on the transcript
+// and used to swallow them — a gated submit_for_review deduped into the
+// watcher's self-approved row and inherited 'approved' no human ever gave.
+describe('dedup vs review intent (ADR-008)', () => {
+  let r: Repository;
+  beforeEach(() => {
+    r = repo();
+  });
+
+  const doc = {
+    project: 'proj',
+    title: 'ADR-9: use the mailbox',
+    body: '# ADR-9\nUse the mailbox.',
+    kind: 'adr' as const,
+  };
+
+  it('a gated submit reclaims an unbacked approved capture', () => {
+    // The watcher captures the doc first and asserts approved with no verdict.
+    r.submit({ ...doc, source: 'watcher', initialStatus: 'approved' });
+    // The agent then submits the same content for review.
+    const result = r.submit({ ...doc, source: 'mcp' });
+
+    expect(result.deduped).toBe(true);
+    expect(result.reclaimed).toBe(true);
+    expect(result.decision.status).toBe('pending');
+    const detail = r.getDecisionDetail(result.decision.id)!;
+    // The reclaim is audited: one verdict event, approved -> pending.
+    expect(detail.verdicts).toHaveLength(1);
+    expect(detail.verdicts[0].fromState).toBe('approved');
+    expect(detail.verdicts[0].toState).toBe('pending');
+  });
+
+  it('a gated submit never reclaims a human-approved decision', () => {
+    const first = r.submit({ ...doc, source: 'mcp' });
+    const human = r.upsertParticipant('human', 'ivan');
+    r.applyVerdict({ decisionId: first.decision.id, to: 'approved', participant: human });
+
+    const again = r.submit({ ...doc, source: 'mcp' });
+    expect(again.deduped).toBe(true);
+    expect(again.reclaimed).toBeUndefined();
+    expect(again.decision.status).toBe('approved');
+  });
+
+  it('an ungated capture never reclaims anything', () => {
+    r.submit({ ...doc, source: 'watcher', initialStatus: 'approved' });
+    const capture = r.submit({ ...doc, source: 'watcher', initialStatus: 'approved' });
+    expect(capture.deduped).toBe(true);
+    expect(capture.reclaimed).toBeUndefined();
+  });
+
+  it('parent_review_id beats the content hash', () => {
+    const original = r.submit({ ...doc, source: 'mcp' });
+    const human = r.upsertParticipant('human', 'ivan');
+    r.applyVerdict({
+      decisionId: original.decision.id,
+      to: 'changes_requested',
+      reason: 'add a diagram',
+      participant: human,
+    });
+
+    // The watcher captures the REVISED text before the agent can resubmit it.
+    const revised = '# ADR-9 v2\nUse the mailbox, with a diagram.';
+    const captured = r.submit({
+      ...doc,
+      body: revised,
+      source: 'watcher',
+      initialStatus: 'approved',
+    });
+    expect(captured.decision.id).not.toBe(original.decision.id);
+
+    // The resubmission names its thread — it must land there, not in the capture.
+    const resubmit = r.submit({
+      ...doc,
+      body: revised,
+      source: 'mcp',
+      parentDecisionId: original.decision.id,
+    });
+    expect(resubmit.deduped).toBe(false);
+    expect(resubmit.decision.id).toBe(original.decision.id);
+    expect(resubmit.version.num).toBe(2);
+    expect(resubmit.decision.status).toBe('pending');
+  });
+
+  it('an identical resubmit to its own thread is a no-op', () => {
+    const original = r.submit({ ...doc, source: 'mcp' });
+    const again = r.submit({ ...doc, source: 'mcp', parentDecisionId: original.decision.id });
+    expect(again.deduped).toBe(true);
+    expect(again.decision.id).toBe(original.decision.id);
+    expect(r.getDecisionDetail(original.decision.id)!.versions).toHaveLength(1);
+  });
+});
