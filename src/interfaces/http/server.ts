@@ -218,6 +218,46 @@ export function createApp(opts: HttpOptions): express.Express {
     }
   });
 
+  // The page chat bar: the human speaks TO the agent from wherever they are
+  // reading. The message is a live bus event relayed by the channel server as
+  // an agent turn, with the page context attached automatically. When it was
+  // typed on a decision page it is ALSO persisted as a thread comment, so the
+  // rationale survives even if no agent is listening right now.
+  app.post('/api/messages', (req: Request, res: Response) => {
+    const { body, context } = req.body ?? {};
+    if (typeof body !== 'string' || !body.trim()) {
+      res.status(422).json({ error: 'empty_message' });
+      return;
+    }
+    const ctx: Record<string, string> = {};
+    if (context && typeof context === 'object') {
+      for (const [k, v] of Object.entries(context as Record<string, unknown>)) {
+        if (typeof v === 'string' && v) ctx[k.slice(0, 40)] = v.slice(0, 300);
+      }
+    }
+    let persisted = false;
+    if (ctx.decisionId) {
+      try {
+        reviews.postComments({
+          decisionId: ctx.decisionId,
+          comments: [{ body: body.trim() }],
+          authorType: 'human',
+        });
+        persisted = true;
+      } catch {
+        // Unknown decision: the live relay still happens, nothing is stored.
+      }
+    }
+    bus.emitEvent({
+      type: 'message',
+      decisionId: ctx.decisionId ?? '',
+      body: body.trim(),
+      context: ctx,
+      at: Date.now(),
+    });
+    res.json({ ok: true, persisted });
+  });
+
   // ---------- SSE ----------
   app.get('/api/events', (req: Request, res: Response) => {
     res.writeHead(200, {
