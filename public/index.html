@@ -504,9 +504,19 @@ function render() {
 qBox.addEventListener('input', () => { if (!location.pathname.startsWith('/d/')) render(); });
 window.addEventListener('popstate', render);
 
-// Live updates: a decision submitted by an agent appears without a refresh.
-new EventSource('/api/events').addEventListener('message', () => {
-  if (!location.pathname.startsWith('/d/')) render();
+// Live updates. On the library, any event re-renders the list. On a decision
+// page, an event ABOUT THIS decision (a new comment, a verdict) re-renders the
+// thread in place — so a reply appears without a manual reload — preserving
+// scroll so the reader doesn't lose their place.
+new EventSource('/api/events').addEventListener('message', (e) => {
+  const onDecision = /^\/d\/(.+)$/.exec(location.pathname);
+  if (!onDecision) { render(); return; }
+  let ev = {};
+  try { ev = JSON.parse(e.data); } catch { /* heartbeat / non-JSON */ }
+  if (ev.decisionId === onDecision[1]) {
+    const y = window.scrollY;
+    renderDecision(onDecision[1]).then(() => window.scrollTo(0, y));
+  }
 });
 
 // Chat bar: send a message to the agent. Context defaults to this page; the
