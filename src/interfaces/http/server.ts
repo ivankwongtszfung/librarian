@@ -3,7 +3,8 @@ import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import type { EventBus } from '../../application/events.js';
+import type { ChannelRegistry } from '../../application/channel-registry.js';
+import type { EventBus, LibrarianEvent } from '../../application/events.js';
 import type { MessageService } from '../../application/message-service.js';
 import type { ReviewService } from '../../application/review-service.js';
 import type { DecisionStore } from '../../domain/ports.js';
@@ -21,6 +22,8 @@ export interface HttpOptions {
   repo: DecisionStore;
   reviews: ReviewService;
   messages: MessageService;
+  /** Which projects have a live channel session — routes messages (ADR-013). */
+  channels: ChannelRegistry;
   bus: EventBus;
   /** When set, every /api AND /mcp request must present it — as an
    *  `Authorization: Bearer` header or the `librarian_token` cookie. */
@@ -306,10 +309,19 @@ export function createApp(opts: HttpOptions): express.Express {
         // Unknown decision: the durable message row still lands below.
       }
     }
-    // Durable first, delivery scheduled by presence (ADR-011): immediate when
-    // the agent is free or unknown, queued-for-batch while it works.
+    // Route by project (ADR-013): a message about a decision inherits that
+    // decision's project; a message from a per-project page carries its own;
+    // a bare "this page" message stays global. The decision's project is
+    // authoritative — decision pages don't send it and it can't be spoofed.
+    let project: string | null = null;
+    if (ctx.decisionId) project = repo.getDecisionDetail(ctx.decisionId)?.projectName ?? null;
+    if (!project && ctx.project) project = ctx.project;
+    if (project) ctx.project = project; // decision's project is authoritative
+    // Durable first, delivery scheduled by presence (ADR-011) and routing
+    // (ADR-013): delivered when a matching session is listening and the agent
+    // is free/unknown, queued while it works or until such a session connects.
     const { queued } = opts.messages.post(body.trim(), Object.keys(ctx).length ? ctx : null);
-    res.json({ ok: true, queued, persisted });
+    res.json({ ok: true, queued, persisted, project });
   });
 
   // Claude Code hooks report the agent's turn state (ADR-011): working on
@@ -326,6 +338,13 @@ export function createApp(opts: HttpOptions): express.Express {
     res.json({ ok: true, working: opts.messages.agentIsWorking() });
   });
 
+  // Messages parked because no session for their project is connected yet
+  // (ADR-013). The catchup surfaces this so a targeted question reads as
+  // waiting-for-the-right-agent, not lost.
+  app.get('/api/messages/pending', (_req: Request, res: Response) => {
+    res.json({ waiting: opts.messages.pendingByProject() });
+  });
+
   // ---------- SSE ----------
   app.get('/api/events', (req: Request, res: Response) => {
     res.writeHead(200, {
@@ -337,10 +356,28 @@ export function createApp(opts: HttpOptions): express.Express {
     });
     res.write(': connected\n\n');
 
-    const onEvent = (event: unknown) => {
+    // Route by project (ADR-013): a channel session declares its project here;
+    // the browser (EventSource can't set headers) declares none and sees all.
+    const mine = req.header('x-librarian-project');
+    const onEvent = (event: LibrarianEvent) => {
+      // A session only ever receives its OWN project's messages, or global
+      // (unprojected) ones. Non-message events stay unscoped (a verdict is read
+      // by decision id; its path is a later decision).
+      if (event.type === 'message' && event.projectName && mine && event.projectName !== mine) {
+        return;
+      }
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
     bus.on('event', onEvent);
+
+    // A declared session joins the registry so parked messages know a home now
+    // exists; connecting flushes anything waiting for its project (and, if it is
+    // the first session up, any global backlog). The listener is registered
+    // above first, so the synchronous flush reaches this very connection.
+    if (mine) {
+      opts.channels.add(mine);
+      opts.messages.flush();
+    }
 
     // Idle proxies drop silent sockets after 30–60s.
     const heartbeat = setInterval(() => res.write(': ping\n\n'), 20_000);
@@ -348,6 +385,7 @@ export function createApp(opts: HttpOptions): express.Express {
     req.on('close', () => {
       clearInterval(heartbeat);
       bus.off('event', onEvent);
+      if (mine) opts.channels.remove(mine);
     });
   });
 

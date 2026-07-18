@@ -8,6 +8,7 @@
 // dropped stream costs latency, because the verdict is a committed row the agent
 // can still read via get_review.
 
+import { basename } from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { DecisionDetail } from '../../domain/types.js';
@@ -118,6 +119,12 @@ export async function runChannel(): Promise<void> {
   const token = process.env.LIBRARIAN_TOKEN;
   const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {};
 
+  // This session's project, declared to the daemon so a message finds the right
+  // session (ADR-013). Defaults to the launch directory's name; `LIBRARIAN_PROJECT`
+  // overrides it (e.g. a claude-lib wrapper exporting basename $PWD).
+  const project = process.env.LIBRARIAN_PROJECT || basename(process.cwd());
+  const eventHeaders = { ...headers, 'x-librarian-project': project };
+
   const mcp = new Server(
     { name: 'librarian-channel', version: '0.1.0' },
     {
@@ -129,7 +136,7 @@ export async function runChannel(): Promise<void> {
     },
   );
   await mcp.connect(new StdioServerTransport());
-  diag(`connected; watching ${base}/api/events`);
+  diag(`connected as project "${project}"; watching ${base}/api/events`);
 
   const send = (m: ChannelMessage): void => {
     diag(`push verdict ${m.meta.decision_id} → ${m.meta.status}`);
@@ -143,7 +150,7 @@ export async function runChannel(): Promise<void> {
 
   for (;;) {
     try {
-      const res = await fetch(`${base}/api/events`, { headers });
+      const res = await fetch(`${base}/api/events`, { headers: eventHeaders });
       if (!res.ok || !res.body) throw new Error(`events stream ${res.status}`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();

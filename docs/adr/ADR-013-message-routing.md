@@ -1,6 +1,6 @@
 # ADR-013: A message finds the right session — route by project, never lose it
 
-**Status:** proposed · **Date:** 2026-07-18 · **Project:** librarian · **Read time:** ~3 min
+**Status:** accepted · built · **Date:** 2026-07-18 · **Project:** librarian · **Read time:** ~3 min
 
 ## TL;DR
 
@@ -89,6 +89,30 @@ Each `/api/events` connection already has its own listener closure and its own
 the same amount of code as client-side, and strictly better: a session only ever
 receives *its own* messages on the wire, not everyone's. The reviewer's "how,
 technically?" question surfaced this; v2 adopts it.
+
+## Build note — two concerns, one has a tiny registry (v3)
+
+The build honors the design and sharpens one point the spec left implicit. There
+are **two** concerns, not one, and only the second needs bookkeeping:
+
+- **Filtering** (which connection sees a message) needs no registry — exactly as
+  argued above. The per-connection listener closure drops what isn't its project.
+- **Durability** (does a home exist *at all*, so an orphan message stays queued
+  instead of being marked delivered into the void) genuinely needs to know which
+  projects have a live session. That is a `ChannelRegistry`: a
+  `Map<project, connection-count>`, `+1` on SSE connect, `−1` on close. `flush()`
+  delivers a project's group only when `hasProject(project)` (or, for a global
+  message, `hasAny()`); otherwise the rows wait. Connecting a session calls
+  `flush()`, so a parked question is delivered the instant its agent shows up.
+
+Only sessions that **declare** a project (the `x-librarian-project` header) are
+counted — a browser EventSource carries no header, so it is a reader, never a
+delivery target, and still receives every event for live-refresh.
+
+Shipped: `src/application/channel-registry.ts`, project-grouped `flush()` in
+`message-service.ts`, target-project resolution + the per-connection filter +
+`GET /api/messages/pending` in `server.ts`, `x-librarian-project` on the channel
+stream, and the catchup "waiting for a session" banner.
 
 ## What this is not
 
