@@ -605,6 +605,16 @@ export class Repository implements DecisionStore {
     if (!decision) return null;
 
     const lastVerdict = this.listVerdicts(decisionId).at(-1) ?? null;
+    // A comment belongs to the document it was said about: v1 feedback must
+    // never read as feedback on v4.
+    const numByVersionId = new Map(
+      (
+        this.db.prepare('SELECT id, num FROM versions WHERE decision_id = ?').all(decisionId) as {
+          id: string;
+          num: number;
+        }[]
+      ).map((v) => [v.id, v.num]),
+    );
     const comments = this.listComments(decisionId).map((c) => {
       const author = this.db
         .prepare('SELECT name, type FROM participants WHERE id = ?')
@@ -618,6 +628,7 @@ export class Repository implements DecisionStore {
         author: author.name,
         authorType: author.type,
         createdAt: c.createdAt,
+        onVersion: (c.versionId ? numByVersionId.get(c.versionId) : null) ?? null,
       };
     });
 
