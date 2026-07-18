@@ -1,6 +1,6 @@
 # ADR-009: Mermaid replaces ASCII diagrams in decision docs
 
-**Status:** proposed (implementation shipped in PR #11 — approve to ratify, reject to revert) · **Date:** 2026-07-17 · **Project:** librarian · **Read time:** ~4 min
+**Status:** accepted (2026-07-18, review `dec_5d22dab9de524a4e86a4`; implementation PR #11) · **Date:** 2026-07-17 · **Project:** librarian · **Read time:** ~4 min
 
 ## TL;DR
 

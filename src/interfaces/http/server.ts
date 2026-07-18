@@ -1,4 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { EventBus } from '../../application/events.js';
@@ -16,6 +18,10 @@ export interface HttpOptions {
    *  `Authorization: Bearer` header or the `librarian_token` cookie. */
   token?: string;
   publicDir?: string;
+  /** The transcript dir being watched. When set, /api/projects also reports
+   *  projects OBSERVED there that have no decisions yet — so the catchup can
+   *  show what librarian is blind to, not just what it knows. */
+  watchDir?: string;
 }
 
 export function createApp(opts: HttpOptions): express.Express {
@@ -154,7 +160,11 @@ export function createApp(opts: HttpOptions): express.Express {
   });
 
   app.get('/api/projects', (_req: Request, res: Response) => {
-    res.json({ projects: repo.listProjects() });
+    const projects = repo.listProjects();
+    const observed = opts.watchDir
+      ? observedProjects(opts.watchDir, new Set(projects.map((p) => p.name)))
+      : [];
+    res.json({ projects, observed });
   });
 
   app.get('/api/sessions/:id', (req: Request, res: Response) => {
@@ -297,9 +307,76 @@ export function createApp(opts: HttpOptions): express.Express {
     app.get('/d/:id', (_req: Request, res: Response) => {
       res.sendFile('index.html', { root: opts.publicDir! });
     });
+    // Per-project page: the library, scoped to one project.
+    app.get('/p/:name', (_req: Request, res: Response) => {
+      res.sendFile('index.html', { root: opts.publicDir! });
+    });
   }
 
   return app;
+}
+
+/**
+ * Projects visible in the transcript dir that the store doesn't know yet.
+ * The true name comes from a transcript's own `cwd` field — the munged
+ * directory name cannot distinguish `_` from `-` (lc_decision_tree and
+ * lc-decision-tree share a directory name), so it is never trusted.
+ */
+function observedProjects(
+  watchDir: string,
+  known: Set<string>,
+): Array<{ name: string; lastActivity: number }> {
+  const out = new Map<string, number>();
+  let entries: string[];
+  try {
+    entries = readdirSync(watchDir);
+  } catch {
+    return [];
+  }
+  for (const entry of entries) {
+    const dir = join(watchDir, entry);
+    let newest: { path: string; mtime: number } | null = null;
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.jsonl')) continue;
+        const p = join(dir, f);
+        const m = statSync(p).mtimeMs;
+        if (!newest || m > newest.mtime) newest = { path: p, mtime: m };
+      }
+    } catch {
+      continue;
+    }
+    if (!newest) continue;
+    const name = cwdBasename(newest.path);
+    if (!name || known.has(name)) continue;
+    out.set(name, Math.max(out.get(name) ?? 0, newest.mtime));
+  }
+  return [...out.entries()]
+    .map(([name, lastActivity]) => ({ name, lastActivity }))
+    .sort((a, b) => b.lastActivity - a.lastActivity);
+}
+
+/** An early transcript line carries cwd — but not necessarily the first:
+ *  compacted sessions open with summary lines. Scan what 64 KB holds. */
+function cwdBasename(transcriptPath: string): string | null {
+  try {
+    const fd = openSync(transcriptPath, 'r');
+    const buf = Buffer.alloc(65536);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    closeSync(fd);
+    for (const line of buf.subarray(0, n).toString('utf8').split('\n')) {
+      try {
+        const parsed = JSON.parse(line) as { cwd?: string };
+        if (parsed.cwd) return basename(parsed.cwd);
+      } catch {
+        // partial or non-JSON line — keep scanning
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function sha256(value: string): Buffer {

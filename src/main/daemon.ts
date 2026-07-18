@@ -71,6 +71,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
     bus,
     token: opts.token,
     publicDir: opts.publicDir ?? DEFAULT_PUBLIC,
+    watchDir: opts.watchDir,
   });
 
   const server = await new Promise<Server>((resolve, reject) => {

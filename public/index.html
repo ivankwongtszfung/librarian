@@ -299,11 +299,12 @@ function card(d) {
   </a>`;
 }
 
-async function renderLibrary() {
-  pageCtx = { view: 'library' };
+async function renderLibrary(project) {
+  pageCtx = project ? { view: 'project', project } : { view: 'library' };
   const q = qBox.value.trim();
   const params = new URLSearchParams();
   if (q) params.set('q', q);
+  if (project) params.set('project', project);
   // "pending" is a promise to the reviewer — everything still waiting on
   // someone. changes_requested is as unresolved as pending, so filter across
   // both client-side instead of matching one exact status server-side.
@@ -327,8 +328,9 @@ async function renderLibrary() {
   const rest = decisions.filter((d) => !needsYou.includes(d));
 
   app.innerHTML =
+    (project ? `<div class="section-title">project · ${esc(project)} — <a href="/index.html" style="color:inherit">all projects</a></div>` : '') +
     (needsYou.length && !q ? `<div class="section-title">Needs you — ${needsYou.length}</div>${needsYou.map(card).join('')}` : '') +
-    (rest.length ? `<div class="section-title">${q ? 'Results' : 'Library'}</div>${rest.map(card).join('')}` : '') +
+    (rest.length ? `<div class="section-title">${q ? 'Results' : project ? `${esc(project)} — decisions` : 'Library'}</div>${rest.map(card).join('')}` : '') +
     (q && needsYou.length ? needsYou.map(card).join('') : '');
 }
 
@@ -375,14 +377,32 @@ async function renderDecision(id) {
           <button class="comment-btn" onclick="submitComments('${id}')">Submit review — request changes</button>
         </div>
       </div>` : ''}
-    ${d.thread?.length ? `<div class="thread"><div class="section-title">Thread — the rationale</div>${d.thread.map((c) => `
+    ${renderThread(d)}
+  `;
+  renderDiagrams();
+}
+
+// The thread is grouped by the document it was said about: a comment on v1
+// must not read as a comment on v4. Newest version's conversation first.
+function renderThread(d) {
+  if (!d.thread?.length) return '';
+  const groups = new Map();
+  for (const c of d.thread) {
+    const num = c.onVersion ?? 0;
+    if (!groups.has(num)) groups.set(num, []);
+    groups.get(num).push(c);
+  }
+  return `<div class="thread"><div class="section-title">Thread — the rationale, by document</div>${[...groups.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([num, cs]) => `
+      <div class="section-title" style="margin-top:0.9rem">${num ? `on v${num}${num === d.versions.length ? ' — current' : ''}` : 'general'}</div>
+      ${cs.map((c) => `
       <div class="comment">
         <div class="who">${esc(c.author)} · ${when(c.createdAt)}</div>
         ${c.anchorQuote ? `<blockquote>${esc(c.anchorQuote)}</blockquote>` : ''}
         <div>${esc(c.body)}</div>
-      </div>`).join('')}</div>` : ''}
-  `;
-  renderDiagrams();
+      </div>`).join('')}`)
+    .join('')}</div>`;
 }
 
 window.showVersion = async (id, num) => {
@@ -435,7 +455,7 @@ window.submitComments = async (id) => {
   renderDecision(id);
 };
 
-window.setFilter = (s) => { filter = s; renderLibrary(); };
+window.setFilter = (s) => { filter = s; render(); };
 
 window.route = (path) => {
   history.pushState({}, '', path);
@@ -443,17 +463,18 @@ window.route = (path) => {
 };
 
 function render() {
-  const m = /^\/d\/(.+)$/.exec(location.pathname);
-  if (m) renderDecision(m[1]);
-  else renderLibrary();
+  const d = /^\/d\/(.+)$/.exec(location.pathname);
+  if (d) { renderDecision(d[1]); return; }
+  const p = /^\/p\/([^/]+)$/.exec(location.pathname);
+  renderLibrary(p ? decodeURIComponent(p[1]) : undefined);
 }
 
-qBox.addEventListener('input', () => { if (!location.pathname.startsWith('/d/')) renderLibrary(); });
+qBox.addEventListener('input', () => { if (!location.pathname.startsWith('/d/')) render(); });
 window.addEventListener('popstate', render);
 
 // Live updates: a decision submitted by an agent appears without a refresh.
 new EventSource('/api/events').addEventListener('message', () => {
-  if (!location.pathname.startsWith('/d/')) renderLibrary();
+  if (!location.pathname.startsWith('/d/')) render();
 });
 
 // Chat bar: send a message to the agent with this page's context attached.

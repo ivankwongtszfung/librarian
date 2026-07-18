@@ -100,6 +100,8 @@ export interface ReviewOutcome {
      *  role-scoped reviewers all comment; only a human can decide. */
     authorType: ParticipantType;
     createdAt: number;
+    /** Which document version this was said about; null = general. */
+    onVersion: number | null;
   }>;
   version: number;
 }
