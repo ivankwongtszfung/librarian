@@ -4,6 +4,7 @@ import { basename, join } from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { EventBus } from '../../application/events.js';
+import type { MessageService } from '../../application/message-service.js';
 import type { ReviewService } from '../../application/review-service.js';
 import type { DecisionStore } from '../../domain/ports.js';
 import { VerdictError } from '../../domain/state-machine.js';
@@ -13,6 +14,7 @@ import { createMcpServer } from '../mcp/server.js';
 export interface HttpOptions {
   repo: DecisionStore;
   reviews: ReviewService;
+  messages: MessageService;
   bus: EventBus;
   /** When set, every /api AND /mcp request must present it — as an
    *  `Authorization: Bearer` header or the `librarian_token` cookie. */
@@ -255,17 +257,27 @@ export function createApp(opts: HttpOptions): express.Express {
         });
         persisted = true;
       } catch {
-        // Unknown decision: the live relay still happens, nothing is stored.
+        // Unknown decision: the durable message row still lands below.
       }
     }
-    bus.emitEvent({
-      type: 'message',
-      decisionId: ctx.decisionId ?? '',
-      body: body.trim(),
-      context: ctx,
-      at: Date.now(),
-    });
-    res.json({ ok: true, persisted });
+    // Durable first, delivery scheduled by presence (ADR-011): immediate when
+    // the agent is free or unknown, queued-for-batch while it works.
+    const { queued } = opts.messages.post(body.trim(), Object.keys(ctx).length ? ctx : null);
+    res.json({ ok: true, queued, persisted });
+  });
+
+  // Claude Code hooks report the agent's turn state (ADR-011): working on
+  // UserPromptSubmit, idle on Stop. Going idle flushes the queued backlog as
+  // one batched channel turn. Best-effort: no hooks means presence unknown,
+  // which behaves exactly like the pre-presence daemon.
+  app.post('/api/presence', (req: Request, res: Response) => {
+    const { state } = req.body ?? {};
+    if (state !== 'working' && state !== 'idle') {
+      res.status(422).json({ error: 'invalid_state', detail: 'state must be working|idle' });
+      return;
+    }
+    opts.messages.reportPresence(state);
+    res.json({ ok: true, working: opts.messages.agentIsWorking() });
   });
 
   // ---------- SSE ----------

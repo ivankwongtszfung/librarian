@@ -1,4 +1,4 @@
-import type { DecisionStore } from '../../domain/ports.js';
+import type { DecisionStore, QueuedMessage } from '../../domain/ports.js';
 import { assertTransition } from '../../domain/state-machine.js';
 import type {
   Comment,
@@ -646,6 +646,52 @@ export class Repository implements DecisionStore {
         'UPDATE comments SET delivered_at = ? WHERE decision_id = ? AND delivered_at IS NULL',
       )
       .run(now(), decisionId);
+  }
+
+  // ---------- chat-bar messages (ADR-011) ----------
+
+  addMessage(body: string, context: Record<string, string> | null): QueuedMessage {
+    const msg: QueuedMessage = {
+      id: newId('msg'),
+      body,
+      context,
+      createdAt: now(),
+      deliveredAt: null,
+    };
+    this.db
+      .prepare(
+        'INSERT INTO messages (id, body, context, created_at, delivered_at) VALUES (?, ?, ?, ?, NULL)',
+      )
+      .run(msg.id, msg.body, msg.context ? JSON.stringify(msg.context) : null, msg.createdAt);
+    return msg;
+  }
+
+  undeliveredMessages(): QueuedMessage[] {
+    const rows = this.db
+      .prepare('SELECT * FROM messages WHERE delivered_at IS NULL ORDER BY created_at')
+      .all() as Array<{
+      id: string;
+      body: string;
+      context: string | null;
+      created_at: number;
+      delivered_at: number | null;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      body: r.body,
+      context: r.context ? (JSON.parse(r.context) as Record<string, string>) : null,
+      createdAt: r.created_at,
+      deliveredAt: r.delivered_at,
+    }));
+  }
+
+  markMessagesDelivered(ids: string[]): void {
+    if (!ids.length) return;
+    const stamp = this.db.prepare('UPDATE messages SET delivered_at = ? WHERE id = ?');
+    const tx = this.db.transaction(() => {
+      for (const id of ids) stamp.run(now(), id);
+    });
+    tx();
   }
 
   // ---------- search & constraints ----------

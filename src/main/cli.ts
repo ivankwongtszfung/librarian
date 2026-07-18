@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportLibrary } from '../application/export.js';
+import { installPresenceHooks, uninstallPresenceHooks } from '../infrastructure/service/hooks.js';
 import {
   SERVICE_LABEL,
   type ServiceSpec,
@@ -106,7 +107,8 @@ function runExport(): void {
 
 /** `librarian install` — register the daemon as a per-user background service. */
 function runInstall(): void {
-  const daemonArgs = process.argv.slice(3); // pass-through daemon flags (--port, --db, ...)
+  // --hooks is ours, not the daemon's.
+  const daemonArgs = process.argv.slice(3).filter((a) => a !== '--hooks');
   const spec: ServiceSpec = {
     label: SERVICE_LABEL,
     nodePath: process.execPath,
@@ -120,11 +122,16 @@ function runInstall(): void {
   console.log(`  unit    ${result.path}`);
   console.log(`  logs    ${spec.logFile}`);
   console.log('  remove  librarian uninstall');
+  if (has('hooks')) {
+    installPresenceHooks(`http://127.0.0.1:${arg('port') ?? '7801'}`);
+    console.log('  hooks   presence reporting added to ~/.claude/settings.json (ADR-011)');
+  }
 }
 
 function runUninstall(): void {
   uninstallService();
-  console.log('librarian service removed.');
+  uninstallPresenceHooks();
+  console.log('librarian service and presence hooks removed.');
 }
 
 async function runDaemon(): Promise<void> {

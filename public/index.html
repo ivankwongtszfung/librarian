@@ -522,7 +522,9 @@ async function sendChat() {
   if (res?.ok) {
     const out = await res.json().catch(() => ({}));
     chatIn.value = '';
-    chatSt.textContent = out.persisted ? '✓ agent + thread' : '✓ sent to agent';
+    chatSt.textContent = out.queued
+      ? '✓ queued — agent busy'
+      : out.persisted ? '✓ agent + thread' : '✓ sent to agent';
     chatSt.className = 'st ok';
     if (out.persisted && location.pathname.startsWith('/d/')) render();
   } else { chatSt.textContent = 'failed — daemon up?'; }

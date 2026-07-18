@@ -80,4 +80,14 @@ describe('messageToChannel', () => {
     expect(m.content).toContain('hello');
     expect(m.meta).toEqual({ kind: 'ui_message' });
   });
+
+  it('frames a flushed batch as one queued backlog', () => {
+    const m = messageToChannel({
+      body: '[1/2 · /] first\n\n[2/2 · /d/dec_1] second',
+      context: { batch: '2' },
+    });
+    expect(m.content).toContain('2 messages from the human, queued');
+    expect(m.content).toContain('[1/2 · /] first');
+    expect(m.meta).toEqual({ kind: 'ui_message', batch: '2' });
+  });
 });

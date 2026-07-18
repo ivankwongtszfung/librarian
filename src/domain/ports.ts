@@ -51,6 +51,20 @@ export interface DecisionStore {
   getSessionDecisions(sessionId: string): Decision[];
   search(query: string, filters?: SearchFilters): SearchHit[];
   constraints(project: string, topic?: string): Constraints;
+
+  // Chat-bar messages (ADR-011): durable rows, delivered in batches. "Sent"
+  // is only ever claimed about a committed row.
+  addMessage(body: string, context: Record<string, string> | null): QueuedMessage;
+  undeliveredMessages(): QueuedMessage[];
+  markMessagesDelivered(ids: string[]): void;
+}
+
+export interface QueuedMessage {
+  id: string;
+  body: string;
+  context: Record<string, string> | null;
+  createdAt: number;
+  deliveredAt: number | null;
 }
 
 /** Push-notification sink — the daemon's outbound alert channel (ntfy today). */

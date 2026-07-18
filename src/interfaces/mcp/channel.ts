@@ -66,6 +66,14 @@ export function messageToChannel(ev: {
   context?: Record<string, string>;
 }): ChannelMessage {
   const ctx = ev.context ?? {};
+  if (ctx.batch) {
+    // A flushed backlog (ADR-011): everything said while the agent worked,
+    // in order, one turn. Each entry carries its own page label.
+    return {
+      content: `${ctx.batch} messages from the human, queued in the review UI while you were working — in order:\n\n${ev.body ?? ''}`,
+      meta: { kind: 'ui_message', batch: ctx.batch },
+    };
+  }
   const where = [
     ctx.page ? `page ${ctx.page}` : null,
     ctx.title ? `"${ctx.title}"` : null,
