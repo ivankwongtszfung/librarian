@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { ChannelRegistry } from '../../src/application/channel-registry.js';
 import { EventBus } from '../../src/application/events.js';
 import { MessageService, PRESENCE_TTL_MS } from '../../src/application/message-service.js';
 import { withPresenceHooks, withoutPresenceHooks } from '../../src/infrastructure/service/hooks.js';
@@ -7,18 +8,24 @@ import { Repository } from '../../src/infrastructure/store/repository.js';
 
 // ADR-011: messages are durable rows; while the agent works they queue, and
 // idle flushes the backlog as ONE event. Unknown presence = deliver now.
+// ADR-013: a message is delivered only when a session for its project (or, for
+// a global message, any session) is connected — else it stays a queued row.
 
 describe('MessageService', () => {
   let repo: Repository;
   let bus: EventBus;
   let clockNow: number;
+  let registry: ChannelRegistry;
   let svc: MessageService;
 
   beforeEach(() => {
     repo = new Repository(openDb(':memory:'));
     bus = new EventBus();
     clockNow = 1_000_000;
-    svc = new MessageService(repo, bus, () => clockNow);
+    // A session is listening, so global/unprojected messages have a home.
+    registry = new ChannelRegistry();
+    registry.add('demo');
+    svc = new MessageService(repo, bus, registry, () => clockNow);
   });
 
   const messageEvents = () => bus.recentEvents().filter((e) => e.type === 'message');
@@ -73,6 +80,68 @@ describe('MessageService', () => {
     const { queued } = svc.post('are you there?', null);
     expect(queued).toBe(false);
     expect(messageEvents()).toHaveLength(1);
+  });
+
+  // ---------- routing by project (ADR-013) ----------
+
+  it('a message for a project with no connected session stays queued', () => {
+    // presence is unknown (would deliver), but no "acct" session is listening.
+    const { queued } = svc.post('about accounting', { project: 'acct', page: '/p/acct' });
+    expect(queued).toBe(false); // not "agent working" — it simply has no home
+    expect(messageEvents()).toHaveLength(0);
+    expect(repo.undeliveredMessages()).toHaveLength(1);
+    expect(svc.pendingByProject()).toEqual([{ project: 'acct', count: 1 }]);
+  });
+
+  it('delivers a parked message when its project session connects', () => {
+    svc.post('about accounting', { project: 'acct', page: '/p/acct' });
+    expect(messageEvents()).toHaveLength(0);
+
+    registry.add('acct'); // the accounting_app channel connects…
+    svc.flush(); // …which triggers a flush
+
+    const events = messageEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].projectName).toBe('acct');
+    expect(events[0].body).toBe('about accounting');
+    expect(repo.undeliveredMessages()).toHaveLength(0);
+  });
+
+  it('never mixes projects in one batch — one turn per project', () => {
+    registry.add('acct');
+    svc.reportPresence('working');
+    svc.post('for demo', { project: 'demo', page: '/p/demo' });
+    svc.post('for acct', { project: 'acct', page: '/p/acct' });
+    svc.reportPresence('idle'); // flush
+
+    const events = messageEvents();
+    expect(events).toHaveLength(2);
+    const byProject = new Map(events.map((e) => [e.projectName, e.body]));
+    expect(byProject.get('demo')).toBe('for demo');
+    expect(byProject.get('acct')).toBe('for acct');
+  });
+
+  it('batches multiple messages for the SAME project as one framed turn', () => {
+    registry.add('acct');
+    svc.reportPresence('working');
+    svc.post('first', { project: 'acct', page: '/p/acct' });
+    svc.post('second', { project: 'acct', page: '/p/acct' });
+    svc.reportPresence('idle');
+
+    const events = messageEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].projectName).toBe('acct');
+    expect(events[0].context?.batch).toBe('2');
+    expect(events[0].context?.project).toBe('acct');
+    expect(events[0].body).toContain('[1/2 · /p/acct] first');
+    expect(events[0].body).toContain('[2/2 · /p/acct] second');
+  });
+
+  it('a targeted message never reaches another project', () => {
+    // only "demo" is connected; a message for "acct" must not ride out.
+    svc.post('secret for acct', { project: 'acct' });
+    expect(messageEvents()).toHaveLength(0);
+    expect(svc.pendingByProject()).toEqual([{ project: 'acct', count: 1 }]);
   });
 });
 

@@ -171,6 +171,9 @@
     </ul>
   </div>
 
+  <!-- ========= PARKED — messages waiting for a session (ADR-013) ========= -->
+  <div id="parked"></div>
+
   <!-- ========= BY PROJECT — live from the store ========= -->
   <h2>By project <button id="rescan" style="font:600 10px var(--m);letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:4px 10px;cursor:pointer">⟳ rescan repos</button> <span id="rescan-st" style="font:500 10.5px var(--m);color:var(--faint)"></span></h2>
   <div class="filters" id="filters"></div>
@@ -249,11 +252,25 @@ const MATCHES = (d) =>
 
 async function renderLive() {
   try {
-    const [pRes, dRes] = await Promise.all([fetch('/api/projects'), fetch('/api/decisions')]);
+    const [pRes, dRes, mRes] = await Promise.all([
+      fetch('/api/projects'),
+      fetch('/api/decisions'),
+      fetch('/api/messages/pending'),
+    ]);
     const pBody = await pRes.json();
     const projects = pBody.projects ?? [];
     const observed = pBody.observed ?? [];
     const decisions = (await dRes.json()).decisions ?? [];
+    const waiting = ((await mRes.json().catch(() => ({}))).waiting ?? []).filter((w) => w.count > 0);
+
+    // Parked messages: a question aimed at a project whose session isn't
+    // connected yet (ADR-013) — it's waiting for the right agent, not lost.
+    document.getElementById('parked').innerHTML = waiting.length
+      ? `<div style="border:1px solid var(--accent);background:var(--accent-soft);border-radius:11px;padding:11px 14px;margin:14px 0;font:500 12.5px var(--m);color:var(--ink)">
+          <b>💬 Waiting for a session</b> — delivered the moment that project's agent connects:
+          ${waiting.map((w) => `<span style="display:inline-block;margin:4px 8px 0 0"><b>${w.count}</b> for <code>${esc(w.project ?? 'anyone listening')}</code></span>`).join('')}
+        </div>`
+      : '';
     const open = decisions.filter(OPEN);
     const red = decisions.filter((d) => d.status === 'rejected');
 

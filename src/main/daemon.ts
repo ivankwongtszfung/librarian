@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ChannelRegistry } from '../application/channel-registry.js';
 import { EventBus } from '../application/events.js';
 import { MessageService } from '../application/message-service.js';
 import { ReviewService } from '../application/review-service.js';
@@ -66,11 +67,13 @@ export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
   const baseUrl = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
 
   const reviews = new ReviewService(repo, bus, notifier, baseUrl);
-  const messages = new MessageService(repo, bus);
+  const channels = new ChannelRegistry();
+  const messages = new MessageService(repo, bus, channels);
   const app = createApp({
     repo,
     reviews,
     messages,
+    channels,
     bus,
     token: opts.token,
     publicDir: opts.publicDir ?? DEFAULT_PUBLIC,
