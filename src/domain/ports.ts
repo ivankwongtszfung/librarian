@@ -8,6 +8,7 @@ import type {
   Participant,
   ParticipantType,
   Project,
+  ProjectCatchup,
   ReviewOutcome,
   SearchFilters,
   SearchHit,
@@ -51,6 +52,7 @@ export interface DecisionStore {
   getSessionDecisions(sessionId: string): Decision[];
   search(query: string, filters?: SearchFilters): SearchHit[];
   constraints(project: string, topic?: string): Constraints;
+  projectCatchup(project: string): ProjectCatchup;
 
   // Chat-bar messages (ADR-011): durable rows, delivered in batches. "Sent"
   // is only ever claimed about a committed row.

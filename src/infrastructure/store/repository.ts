@@ -1,6 +1,7 @@
 import type { DecisionStore, QueuedMessage } from '../../domain/ports.js';
 import { assertTransition } from '../../domain/state-machine.js';
 import type {
+  CatchupItem,
   Comment,
   Decision,
   DecisionDetail,
@@ -9,6 +10,7 @@ import type {
   Participant,
   ParticipantType,
   Project,
+  ProjectCatchup,
   ReviewOutcome,
   SearchFilters,
   SearchHit,
@@ -783,6 +785,66 @@ export class Repository implements DecisionStore {
     };
   }
 
+  // ---------- catchup ----------
+
+  /** Generate a project's catchup briefing from the live store (the button).
+   *  The authored sections of the project-state standard, filled from real
+   *  data — no hand-maintained narrative, always current. */
+  projectCatchup(project: string): ProjectCatchup {
+    const all = this.listDecisions({ project, limit: 500 });
+    const toItem = (d: Decision): CatchupItem => ({
+      id: d.id,
+      title: d.title,
+      kind: d.kind,
+      status: d.status,
+      createdAt: d.createdAt,
+      decidedAt: d.decidedAt,
+      reason: lastReason(this.listVerdicts(d.id)),
+      tldr: firstMeaningfulLine(this.latestVersion(d.id)?.bodyMd ?? null),
+    });
+    const items = all.map(toItem);
+    const isOpen = (s: DecisionStatus) => s === 'pending' || s === 'changes_requested';
+
+    const rightNow = items.filter((d) => isOpen(d.status));
+    // Loud: red lights, plus bug reports that aren't resolved (still open).
+    const critical = items.filter(
+      (d) => d.status === 'rejected' || (d.kind === 'bug' && isOpen(d.status)),
+    );
+    const keyDecisions = items.filter((d) => d.status === 'approved').slice(0, 8);
+
+    // One timeline entry per decision — its most recent event — newest first.
+    const activity = items
+      .map((d) => ({
+        at: d.decidedAt ?? d.createdAt,
+        label: labelFor(d.status),
+        id: d.id,
+        title: d.title,
+        kind: d.kind,
+      }))
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 15);
+
+    const lastActivity = items.length
+      ? Math.max(...items.map((d) => d.decidedAt ?? d.createdAt))
+      : null;
+
+    return {
+      project,
+      generatedAt: now(),
+      stats: {
+        decisions: items.length,
+        needsYou: rightNow.length,
+        redLights: items.filter((d) => d.status === 'rejected').length,
+        bugs: items.filter((d) => d.kind === 'bug').length,
+        lastActivity,
+      },
+      rightNow,
+      critical,
+      keyDecisions,
+      activity,
+    };
+  }
+
   // ---------- fts ----------
 
   /** FTS is a derived index: rebuilt from decisions + latest body + latest reason. */
@@ -834,6 +896,49 @@ function lastReason(verdicts: VerdictEvent[]): string | null {
     if (verdicts[i].reason) return verdicts[i].reason;
   }
   return null;
+}
+
+/** A doc's TL;DR at a glance: the first line of real prose. Skips headings,
+ *  the metadata line, blockquote/callout markers, list bullets, and code
+ *  fences; strips inline markdown; returns null if there's nothing to say. */
+function firstMeaningfulLine(body: string | null): string | null {
+  if (!body) return null;
+  let inFence = false;
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('```')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (line.startsWith('#')) continue; // heading
+    if (/^\*\*(Status|Date|Project|Read time)/i.test(line)) continue; // meta line
+    // Strip a leading list/quote marker and inline markdown emphasis/code/links.
+    const text = line
+      .replace(/^[>\-*+]\s*/, '')
+      .replace(/^\d+\.\s*/, '')
+      .replace(/[*_`]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .trim();
+    if (!text) continue;
+    return text.length > 200 ? `${text.slice(0, 197)}…` : text;
+  }
+  return null;
+}
+
+/** Human label for a decision's current state in the activity timeline. */
+function labelFor(status: DecisionStatus): string {
+  switch (status) {
+    case 'approved':
+      return 'approved';
+    case 'rejected':
+      return 'rejected';
+    case 'changes_requested':
+      return 'changes requested';
+    default:
+      return 'submitted';
+  }
 }
 
 /** FTS5 treats bare punctuation as syntax; quote each term so user text is literal. */

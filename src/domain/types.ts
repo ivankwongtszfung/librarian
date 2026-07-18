@@ -183,3 +183,44 @@ export interface Notification {
   decisionId: string;
   url?: string;
 }
+
+/** One decision as it appears in a generated catchup briefing. */
+export interface CatchupItem {
+  id: string;
+  title: string;
+  kind: DecisionKind;
+  status: DecisionStatus;
+  createdAt: number;
+  decidedAt: number | null;
+  /** The human's rationale at verdict time — the "why", never invented. */
+  reason: string | null;
+  /** First meaningful line of the doc (its TL;DR), for a one-glance sense. */
+  tldr: string | null;
+}
+
+/**
+ * A project's catchup briefing, generated live from the store on demand — the
+ * project-state standard's authored sections, filled from real data instead of
+ * hand-maintained narrative: RIGHT NOW = open items, critical = red lights +
+ * bugs, key decisions carry their real verdict reason, activity is the real
+ * verdict/submit timeline. Always current because it is computed at click time.
+ */
+export interface ProjectCatchup {
+  project: string;
+  generatedAt: number;
+  stats: {
+    decisions: number;
+    needsYou: number;
+    redLights: number;
+    bugs: number;
+    lastActivity: number | null;
+  };
+  /** Pending / changes_requested — the one thing waiting on the human. */
+  rightNow: CatchupItem[];
+  /** Loud concerns: rejected decisions and open bug reports. */
+  critical: CatchupItem[];
+  /** Recent approved decisions, each with its why. */
+  keyDecisions: CatchupItem[];
+  /** Newest-first timeline of what happened, one entry per decision. */
+  activity: Array<{ at: number; label: string; id: string; title: string; kind: DecisionKind }>;
+}
