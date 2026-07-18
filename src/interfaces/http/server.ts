@@ -9,6 +9,12 @@ import type { ReviewService } from '../../application/review-service.js';
 import type { DecisionStore } from '../../domain/ports.js';
 import { VerdictError } from '../../domain/state-machine.js';
 import type { DecisionKind, DecisionStatus } from '../../domain/types.js';
+import {
+  classifyDoc,
+  projectNameFromFilePath,
+  titleFromMarkdown,
+} from '../../infrastructure/watcher/extract.js';
+import { scanForDocs } from '../../infrastructure/watcher/scan.js';
 import { createMcpServer } from '../mcp/server.js';
 
 export interface HttpOptions {
@@ -167,6 +173,46 @@ export function createApp(opts: HttpOptions): express.Express {
       ? observedProjects(opts.watchDir, new Set(projects.map((p) => p.name)))
       : [];
     res.json({ projects, observed });
+  });
+
+  // The rescan button (BUG-001, fix option 1): walk every known project root
+  // for decision docs the watcher never saw, and import what's missing.
+  // Deliberate, human-triggered, idempotent — content-hash dedup means a
+  // rescan can never duplicate; imported records carry the file's mtime so
+  // their dates tell the truth.
+  app.post('/api/scan', (_req: Request, res: Response) => {
+    const roots = new Map<string, string>();
+    if (opts.watchDir) {
+      for (const t of transcriptRoots(opts.watchDir)) roots.set(t.name, t.root);
+    }
+    for (const p of repo.listProjects()) {
+      if (p.rootPath) roots.set(p.name, p.rootPath);
+    }
+    let files = 0;
+    let known = 0;
+    const imported: Array<{ project: string; title: string; kind: string }> = [];
+    for (const [project, root] of roots) {
+      for (const doc of scanForDocs(root)) {
+        files++;
+        const result = repo.submit({
+          project: projectNameFromFilePath(doc.filePath) ?? project,
+          title: titleFromMarkdown(doc.content, basename(doc.filePath, '.md')),
+          body: doc.content,
+          kind: classifyDoc(doc.filePath),
+          source: 'mcp',
+          initialStatus: 'approved',
+          at: doc.modifiedAt,
+        });
+        if (result.deduped) known++;
+        else
+          imported.push({
+            project: projectNameFromFilePath(doc.filePath) ?? project,
+            title: result.decision.title,
+            kind: result.decision.kind,
+          });
+      }
+    }
+    res.json({ ok: true, roots: roots.size, files, known, imported });
   });
 
   app.get('/api/sessions/:id', (req: Request, res: Response) => {
@@ -334,11 +380,12 @@ export function createApp(opts: HttpOptions): express.Express {
  * directory name cannot distinguish `_` from `-` (lc_decision_tree and
  * lc-decision-tree share a directory name), so it is never trusted.
  */
-function observedProjects(
+/** Every project the transcript dir knows: true name AND root, from a
+ *  transcript's own cwd (the munged dir name can't be trusted). */
+function transcriptRoots(
   watchDir: string,
-  known: Set<string>,
-): Array<{ name: string; lastActivity: number }> {
-  const out = new Map<string, number>();
+): Array<{ name: string; root: string; lastActivity: number }> {
+  const out = new Map<string, { root: string; lastActivity: number }>();
   let entries: string[];
   try {
     entries = readdirSync(watchDir);
@@ -360,18 +407,31 @@ function observedProjects(
       continue;
     }
     if (!newest) continue;
-    const name = cwdBasename(newest.path);
-    if (!name || known.has(name)) continue;
-    out.set(name, Math.max(out.get(name) ?? 0, newest.mtime));
+    const cwd = transcriptCwd(newest.path);
+    if (!cwd) continue;
+    const name = basename(cwd);
+    const prev = out.get(name);
+    if (!prev || newest.mtime > prev.lastActivity) {
+      out.set(name, { root: cwd, lastActivity: newest.mtime });
+    }
   }
   return [...out.entries()]
-    .map(([name, lastActivity]) => ({ name, lastActivity }))
+    .map(([name, v]) => ({ name, ...v }))
     .sort((a, b) => b.lastActivity - a.lastActivity);
+}
+
+function observedProjects(
+  watchDir: string,
+  known: Set<string>,
+): Array<{ name: string; lastActivity: number }> {
+  return transcriptRoots(watchDir)
+    .filter((t) => !known.has(t.name))
+    .map(({ name, lastActivity }) => ({ name, lastActivity }));
 }
 
 /** An early transcript line carries cwd — but not necessarily the first:
  *  compacted sessions open with summary lines. Scan what 64 KB holds. */
-function cwdBasename(transcriptPath: string): string | null {
+function transcriptCwd(transcriptPath: string): string | null {
   try {
     const fd = openSync(transcriptPath, 'r');
     const buf = Buffer.alloc(65536);
@@ -380,7 +440,7 @@ function cwdBasename(transcriptPath: string): string | null {
     for (const line of buf.subarray(0, n).toString('utf8').split('\n')) {
       try {
         const parsed = JSON.parse(line) as { cwd?: string };
-        if (parsed.cwd) return basename(parsed.cwd);
+        if (parsed.cwd) return parsed.cwd;
       } catch {
         // partial or non-JSON line — keep scanning
       }

@@ -169,7 +169,7 @@
   </div>
 
   <!-- ========= BY PROJECT — live from the store ========= -->
-  <h2>By project</h2>
+  <h2>By project <button id="rescan" style="font:600 10px var(--m);letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:4px 10px;cursor:pointer">⟳ rescan repos</button> <span id="rescan-st" style="font:500 10.5px var(--m);color:var(--faint)"></span></h2>
   <div id="projects"><div class="fork"><p>Loading from the live store…</p></div></div>
 
   <!-- ========= DRILL-DOWN ========= -->
@@ -316,6 +316,19 @@ async function sendChat() {
 }
 document.getElementById('chat-send').addEventListener('click', sendChat);
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+// Rescan: walk every known project root for decision docs librarian missed
+// (BUG-001). Idempotent — dedup upstream means mashing the button is safe.
+const rescanBtn = document.getElementById('rescan');
+const rescanSt = document.getElementById('rescan-st');
+rescanBtn.addEventListener('click', async () => {
+  rescanSt.textContent = 'scanning…';
+  const res = await fetch('/api/scan', { method: 'POST' }).catch(() => null);
+  if (!res?.ok) { rescanSt.textContent = 'scan failed — daemon up?'; return; }
+  const out = await res.json();
+  rescanSt.textContent = `${out.files} docs in ${out.roots} repos · imported ${out.imported.length} · already knew ${out.known}`;
+  renderLive();
+});
 </script>
 </body>
 </html>

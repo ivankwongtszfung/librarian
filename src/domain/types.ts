@@ -147,6 +147,9 @@ export interface SubmitInput {
   pinnedCommit?: string;
   /** record_decision stores an already-settled entry; submit_for_review gates. */
   initialStatus?: DecisionStatus;
+  /** Backdate an imported record to when the document actually existed
+   *  (file mtime on rescan). A record's date should tell the truth. */
+  at?: number;
 }
 
 export interface SubmitResult {
