@@ -111,6 +111,7 @@
   .chat{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);box-shadow:0 -8px 26px rgba(28,31,38,.06)}
   .chat .row{max-width:820px;margin:0 auto;padding:12px 18px;display:flex;gap:9px;align-items:center}
   .chat input{flex:1;font:14px var(--d);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
+  .chat select{max-width:200px;font:500 11px var(--m);color:var(--mut);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 6px}
   .chat input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   .chat button{font:600 12.5px var(--d);background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:9px;padding:9px 16px;cursor:pointer}
   .chat .st{font:500 10.5px/1.3 var(--m);color:var(--faint);min-width:86px;text-align:right}
@@ -207,7 +208,8 @@
 
 <!-- ========= CHAT BAR — speak to the agent from this page ========= -->
 <div class="chat"><div class="row">
-  <input id="chat-in" type="text" placeholder="Tell the agent something — this page's context rides along…">
+  <select id="chat-ctx" title="What this message is about"><option value="">about: this page</option></select>
+  <input id="chat-in" type="text" placeholder="Tell the agent something — the chosen context rides along…">
   <button id="chat-send">Send</button>
   <span class="st" id="chat-st"></span>
 </div></div>
@@ -228,6 +230,14 @@ async function renderLive() {
     const decisions = (await dRes.json()).decisions ?? [];
     const open = decisions.filter(OPEN);
     const red = decisions.filter((d) => d.status === 'rejected');
+
+    // The chat context picker: "this page" or any open review, no navigation.
+    const ctxSel = document.getElementById('chat-ctx');
+    const keep = ctxSel.value;
+    ctxSel.innerHTML = '<option value="">about: this page</option>' + open
+      .map((d) => `<option value="${d.id}" data-title="${esc(d.title)}">about: ${esc(d.title.slice(0, 44))}…</option>`)
+      .join('');
+    if ([...ctxSel.options].some((o) => o.value === keep)) ctxSel.value = keep;
 
     document.getElementById('topline').innerHTML = `
       <div class="stat ${open.length ? 'hot' : ''}"><b>${open.length}</b><small>needs you</small></div>
@@ -273,15 +283,22 @@ async function sendChat() {
   const body = input.value.trim();
   if (!body) return;
   st.textContent = 'sending…'; st.className = 'st';
+  const sel = document.getElementById('chat-ctx');
+  const chosen = sel.selectedOptions[0];
+  const context = sel.value
+    ? { page: location.pathname, view: 'catchup', decisionId: sel.value, title: chosen?.dataset.title ?? '' }
+    : { page: location.pathname, view: 'catchup' };
   const res = await fetch('/api/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ body, context: { page: location.pathname, view: 'catchup' } }),
+    body: JSON.stringify({ body, context }),
   }).catch(() => null);
   if (res?.ok) {
     const out = await res.json().catch(() => ({}));
     input.value = '';
-    st.textContent = out.queued ? '✓ queued — agent busy' : '✓ sent to agent';
+    st.textContent = out.queued
+      ? '✓ queued — agent busy'
+      : out.persisted ? '✓ agent + thread' : '✓ sent to agent';
     st.className = 'st ok';
   } else { st.textContent = 'failed — is the daemon up?'; }
   setTimeout(() => { st.textContent = ''; }, 4000);

@@ -164,6 +164,7 @@
   .chat { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); }
   .chat .row { max-width: 62rem; margin: 0 auto; padding: 0.75rem 1.25rem; display: flex; gap: 0.55rem; align-items: center; }
   .chat input { flex: 1; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.75rem; }
+  .chat select { max-width: 12rem; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.35rem; }
   .chat button { font-family: var(--sans); font-weight: 600; font-size: 0.85rem; background: var(--green); color: #fff; border: 1px solid var(--green); border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; }
   .chat .st { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 6rem; text-align: right; }
   .chat .st.ok { color: var(--green-ink); }
@@ -178,7 +179,8 @@
 </header>
 <main id="app"><p class="empty">Loading…</p></main>
 <div class="chat"><div class="row">
-  <input id="chat-in" type="text" placeholder="Tell the agent something — this page's context rides along…">
+  <select id="chat-ctx" title="What this message is about"><option value="">about: this page</option></select>
+  <input id="chat-in" type="text" placeholder="Tell the agent something — the chosen context rides along…">
   <button id="chat-send">Send</button>
   <span class="st" id="chat-st"></span>
 </div></div>
@@ -507,17 +509,32 @@ new EventSource('/api/events').addEventListener('message', () => {
   if (!location.pathname.startsWith('/d/')) render();
 });
 
-// Chat bar: send a message to the agent with this page's context attached.
+// Chat bar: send a message to the agent. Context defaults to this page; the
+// picker retargets it to any open review without navigating there.
 const chatIn = document.getElementById('chat-in');
 const chatSt = document.getElementById('chat-st');
+const chatCtx = document.getElementById('chat-ctx');
+async function loadCtxPicker() {
+  const { body } = await api('/decisions');
+  const open = (body.decisions ?? []).filter((d) => d.status === 'pending' || d.status === 'changes_requested');
+  const keep = chatCtx.value;
+  chatCtx.innerHTML = '<option value="">about: this page</option>' + open
+    .map((d) => `<option value="${d.id}" data-title="${esc(d.title)}">about: ${esc(d.title.slice(0, 44))}…</option>`)
+    .join('');
+  if ([...chatCtx.options].some((o) => o.value === keep)) chatCtx.value = keep;
+}
 async function sendChat() {
   const body = chatIn.value.trim();
   if (!body) return;
   chatSt.textContent = 'sending…'; chatSt.className = 'st';
+  const chosen = chatCtx.selectedOptions[0];
+  const context = chatCtx.value
+    ? { page: location.pathname, ...pageCtx, decisionId: chatCtx.value, title: chosen?.dataset.title ?? '' }
+    : { page: location.pathname, ...pageCtx };
   const res = await fetch('/api/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ body, context: { page: location.pathname, ...pageCtx } }),
+    body: JSON.stringify({ body, context }),
   }).catch(() => null);
   if (res?.ok) {
     const out = await res.json().catch(() => ({}));
@@ -532,6 +549,8 @@ async function sendChat() {
 }
 document.getElementById('chat-send').addEventListener('click', sendChat);
 chatIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+loadCtxPicker();
+new EventSource('/api/events').addEventListener('message', loadCtxPicker);
 
 render();
 </script>
