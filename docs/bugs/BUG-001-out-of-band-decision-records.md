@@ -1,6 +1,6 @@
 # BUG-001: Decision records outside `docs/` are invisible — and the library looks complete anyway
 
-**Kind:** bug · **Severity:** medium · **Date:** 2026-07-18 · **Project:** librarian · **Status:** mitigated, root causes open
+**Kind:** bug · **Severity:** medium · **Date:** 2026-07-18 · **Project:** librarian · **Status:** accepted (2026-07-18, dec_bb4be21c) — options 1+2 shipped (PR #26, #15); per-project preview follow-up open
 
 ## Symptom
 
