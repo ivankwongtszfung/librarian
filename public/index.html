@@ -426,7 +426,7 @@ function renderThread(d) {
       <div class="comment">
         <div class="who">${esc(c.author)} · ${when(c.createdAt)}</div>
         ${c.anchorQuote ? `<blockquote>${esc(c.anchorQuote)}</blockquote>` : ''}
-        <div>${esc(c.body)}</div>
+        <div>${esc(c.body).replace(/\n/g, '<br>')}</div>
       </div>`).join('')}`)
     .join('')}</div>`;
 }
