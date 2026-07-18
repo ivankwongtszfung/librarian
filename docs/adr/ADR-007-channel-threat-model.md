@@ -12,19 +12,16 @@
 
 Delivery went pull → push. Same forged verdict, two very different fates:
 
-```
-  Same forged "approved" — two fates:
-
-  BEFORE (pull)                NOW (push — this ADR)
-  ─────────────                ─────────────────────
-  committed row                committed row
-        │                            │
-   agent reads it            channel injects it
-   ONLY if it polls          as a turn, at once
-        │                            │
-        ▼                            ▼
-   may sit unread            agent is handed it
-   = a PASSIVE lie           and ACTS = ACTIVE lie
+```mermaid
+flowchart TD
+    F["forged 'approved' — a committed row"] --> B["BEFORE — pull"]
+    F --> N["NOW — push (this ADR)"]
+    B --> B1["agent reads it ONLY if it polls"]
+    B1 --> B2["may sit unread — a PASSIVE lie"]
+    N --> N1["channel injects it as a turn, at once"]
+    N1 --> N2["agent is handed it and ACTS — an ACTIVE lie"]
+    style B2 stroke:#A87614
+    style N2 stroke:#BC4438,stroke-width:2px
 ```
 
 The channel adds **no new external attack surface**. What it does is raise the
@@ -33,16 +30,13 @@ stops being a note the agent *might* read and becomes an instruction it *execute
 
 ## Where the danger lives (and the gate)
 
-```
-  ┌ this machine · loopback trust boundary ───────────────┐
-  │                                                        │
-  │   daemon 127.0.0.1:7801 ─SSE─► channel ─turn─► agent   │
-  │                                                        │
-  └────────────────────────────────────────────────────────┘
-                      ▲
-                      │  ⛔ BLOCKED until ADR-004 (verdict auth)
-                      │
-              remote device / tunnel
+```mermaid
+flowchart LR
+    subgraph M["this machine — loopback trust boundary"]
+        D["daemon 127.0.0.1:7801"] -->|SSE| C["channel"] -->|turn| A["agent"]
+    end
+    R["remote device / tunnel"] -.->|"⛔ BLOCKED until ADR-004 (verdict auth)"| D
+    style R stroke:#BC4438,stroke-width:2px
 ```
 
 Today the trust boundary is **any process running as you, on this machine** — the

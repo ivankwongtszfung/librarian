@@ -11,21 +11,16 @@
 
 ## The failure, in one picture
 
-```
- agent writes doc to repo            agent calls submit_for_review
-        │                                     │ (23s later)
-        ▼                                     ▼
- watcher tails the transcript         repo.submit computes
-        │                             content_hash — MATCH
-        ▼                                     │
- capture() → submit with                      ▼
- initialStatus:'approved'   ◄──── deduped INTO the watcher's row
- NO verdict event written         status stays 'approved'
-        │                         parent_review_id IGNORED
-        ▼                                     │
- "approved" decision                          ▼
- nobody ever ruled on            review gate BYPASSED — the pending
-                                 review the human expected never exists
+```mermaid
+flowchart TD
+    W["watcher tails the transcript"] -->|"captures the doc first"| A["'approved' — NO verdict event written"]
+    G["agent calls submit_for_review (23s later)"] -->|"same content_hash"| D{"dedup"}
+    A --> D
+    D --> H["submission absorbed into the watcher's row —
+    status stays 'approved', parent_review_id IGNORED,
+    review gate BYPASSED"]
+    style A stroke:#A87614
+    style H stroke:#BC4438,stroke-width:2px
 ```
 
 The race is structural, not bad luck: the watcher tails the **same transcript
