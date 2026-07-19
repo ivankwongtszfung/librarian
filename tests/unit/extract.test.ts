@@ -73,7 +73,7 @@ const docWrite = {
   type: 'assistant',
   uuid: '36a72104-aaaa-bbbb-cccc-000000000004',
   sessionId: 'cfa8b3b5-1111-2222-3333-444444444444',
-  cwd: '/Users/ivankwong/Projects/all_state',
+  cwd: '/Users/x/Projects/all_state',
   message: {
     role: 'assistant',
     content: [
@@ -82,7 +82,7 @@ const docWrite = {
         id: 'toolu_019h44psRHRs2WS93nrxzZac',
         name: 'Write',
         input: {
-          file_path: '/Users/ivankwong/Projects/librarian/docs/adr/ADR-001-store.md',
+          file_path: '/Users/x/Projects/librarian/docs/adr/ADR-001-store.md',
           content: '# ADR-001: SQLite as the store\n\nWe will use SQLite.',
         },
       },
@@ -148,7 +148,7 @@ describe('doc write extraction', () => {
 
   it('derives the project from the file path, not cwd — writes cross repos', () => {
     // cwd is all_state, but the doc was written into librarian.
-    expect(projectNameFromFilePath('/Users/ivankwong/Projects/librarian/docs/adr/ADR-001.md')).toBe(
+    expect(projectNameFromFilePath('/Users/x/Projects/librarian/docs/adr/ADR-001.md')).toBe(
       'librarian',
     );
   });
