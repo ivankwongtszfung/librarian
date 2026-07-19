@@ -398,45 +398,80 @@ async function renderLibrary(project) {
     (q && needsYou.length ? needsYou.map(card).join('') : '');
 }
 
-// The "Catch me up" button: a briefing generated live from the store, in the
-// project-state standard's shape. Regenerated on every click and on live
-// events, so it is never stale.
+// The "Catch me up" button: ask THIS project's agent to write the briefing.
+// The request routes to the project's own session (ADR-013); the agent grounds
+// itself in the library, generates the catchup, and stores it via record_catchup
+// — which pushes a live 'catchup' event that lands it on this page. A
+// deterministic auto-summary stands in until the written one arrives.
+let catchupWaiting = null; // { project, at, connected } while a request is in flight
+
 window.catchup = (project) => {
   history.pushState({}, '', `/p/${encodeURIComponent(project)}?catchup=1`);
-  renderCatchup(project);
+  requestCatchup(project);
 };
+
+async function requestCatchup(project) {
+  catchupWaiting = { project, at: Date.now() };
+  renderCatchup(project);
+  const { status, body } = await api(`/projects/${encodeURIComponent(project)}/catchup/request`, {
+    method: 'POST',
+  });
+  catchupWaiting = { project, at: Date.now(), connected: status === 200 ? body.connected : undefined };
+  renderCatchup(project);
+}
 
 async function renderCatchup(project) {
   pageCtx = { view: 'catchup', project };
-  if (!app.querySelector('.cu-head')) app.innerHTML = '<p class="empty">Generating…</p>';
-  const { body: c, status } = await api(`/projects/${encodeURIComponent(project)}/catchup`);
-  if (status !== 200) { app.innerHTML = '<p class="empty">Could not generate a catchup.</p>'; return; }
-  const s = c.stats;
+  if (!app.querySelector('.cu-head')) app.innerHTML = '<p class="empty">Loading…</p>';
+  const [docRes, autoRes] = await Promise.all([
+    api(`/projects/${encodeURIComponent(project)}/catchup-doc`),
+    api(`/projects/${encodeURIComponent(project)}/catchup`),
+  ]);
+  const latest = docRes.body?.latest ?? null;
+  const history = docRes.body?.history ?? [];
+  const c = autoRes.body ?? {};
+  const s = c.stats ?? { needsYou: 0, redLights: 0, bugs: 0, decisions: 0, lastActivity: null };
+
+  // Clear the waiting flag once a written catchup newer than the request lands.
+  if (latest && catchupWaiting?.project === project && latest.createdAt >= catchupWaiting.at) {
+    catchupWaiting = null;
+  }
+  const waiting = catchupWaiting?.project === project;
+  const banner = waiting
+    ? `<div class="cu-now">${catchupWaiting.connected === false
+        ? `⏳ <b>Parked</b> — no <code>${esc(project)}</code> session is connected. It generates the moment one is (the request is saved).`
+        : `⏳ <b>Asked the ${esc(project)} agent</b> to write your catchup — it appears here when ready.`}</div>`
+    : '';
 
   const item = (d) => `<div class="cu-row">
     <span class="cu-chip ${d.status}">${esc(d.status.replace('_', ' '))}</span>
-    <div class="main">
-      <a href="/d/${d.id}">${esc(d.title)}</a>
-      ${d.reason ? `<span class="why">✏️ ${esc(d.reason)}</span>`
-        : d.tldr ? `<span class="why">${esc(d.tldr)}</span>` : ''}
-    </div>
+    <div class="main"><a href="/d/${d.id}">${esc(d.title)}</a>${
+      d.reason ? `<span class="why">✏️ ${esc(d.reason)}</span>` : d.tldr ? `<span class="why">${esc(d.tldr)}</span>` : ''
+    }</div>
     <span class="cu-chip">${esc(d.kind)}</span>
   </div>`;
 
-  const nowLine = c.rightNow.length
-    ? `<b>${c.rightNow.length} waiting on you.</b> Start with “${esc(c.rightNow[0].title)}”.`
-    : '<b>Nothing waiting on you</b> — the review queue is clear.';
+  const autoSummary =
+    `${c.rightNow?.length ? `<div class="cu-sec">Right now — waiting on you</div>${c.rightNow.map(item).join('')}` : ''}` +
+    `${c.critical?.length ? `<div class="cu-sec">🔴 Critical — red lights &amp; open bugs</div><div class="cu-crit">${c.critical.map(item).join('')}</div>` : ''}` +
+    `${c.keyDecisions?.length ? `<div class="cu-sec">Key decisions &amp; why</div>${c.keyDecisions.map(item).join('')}` : ''}` +
+    `${c.activity?.length ? `<div class="cu-sec">Activity</div><div class="cu-log">${c.activity.map((a) => `<div class="e"><span class="dt">${when(a.at)}</span><span>${esc(a.label)} · <a href="/d/${a.id}" style="color:inherit">${esc(a.title)}</a></span></div>`).join('')}</div>` : ''}`;
+
+  const meta = latest
+    ? `written ${new Date(latest.createdAt).toLocaleString()}${latest.generatedBy ? ` by ${esc(latest.generatedBy)}` : ''}${history.length > 1 ? ` · ${history.length} versions` : ''}`
+    : 'no written catchup yet';
 
   app.innerHTML = `
     <div class="cu-head">
       <h1>${esc(project)} — catchup</h1>
-      <span class="gen">generated ${new Date(c.generatedAt).toLocaleString()}</span>
+      <span class="gen">${meta}</span>
       <span class="cu-actions">
-        <button data-p="${esc(project)}" onclick="renderCatchup(this.dataset.p)">⟳ regenerate</button>
+        <button data-p="${esc(project)}" onclick="catchup(this.dataset.p)">⚡ ${latest ? 'regenerate' : 'generate'}</button>
         <button onclick="window.print()">⎙ save</button>
         <a href="/p/${encodeURIComponent(project)}">← decisions</a>
       </span>
     </div>
+    ${banner}
     <div class="topline">
       <div class="stat ${s.needsYou ? 'hot' : ''}"><b>${s.needsYou}</b><small>needs you</small></div>
       <div class="stat ${s.redLights ? 'bad' : ''}"><b>${s.redLights}</b><small>red lights</small></div>
@@ -444,12 +479,11 @@ async function renderCatchup(project) {
       <div class="stat"><b>${s.decisions}</b><small>decisions</small></div>
       ${s.lastActivity ? `<div class="stat"><b>${when(s.lastActivity)}</b><small>last activity</small></div>` : ''}
     </div>
-    <div class="cu-now ${c.rightNow.length ? '' : 'calm'}">${nowLine}</div>
-    ${c.rightNow.length ? `<div class="cu-sec">Right now — waiting on you</div>${c.rightNow.map(item).join('')}` : ''}
-    ${c.critical.length ? `<div class="cu-sec">🔴 Critical — red lights &amp; open bugs</div><div class="cu-crit">${c.critical.map(item).join('')}</div>` : ''}
-    ${c.keyDecisions.length ? `<div class="cu-sec">Key decisions &amp; why</div>${c.keyDecisions.map(item).join('')}` : ''}
-    ${c.activity.length ? `<div class="cu-sec">Activity</div><div class="cu-log">${c.activity.map((a) => `<div class="e"><span class="dt">${when(a.at)}</span><span>${esc(a.label)} · <a href="/d/${a.id}" style="color:inherit">${esc(a.title)}</a></span></div>`).join('')}</div>` : ''}
+    ${latest
+      ? `<div class="doc">${md(latest.bodyMd)}</div>`
+      : `<div class="cu-sec">Auto-summary — click ⚡ for a written catchup from the agent</div>${autoSummary || '<p class="empty">Nothing recorded for this project yet.</p>'}`}
   `;
+  if (latest) renderDiagrams();
 }
 
 async function renderDecision(id) {
@@ -586,7 +620,15 @@ function render() {
   const p = /^\/p\/([^/]+)$/.exec(location.pathname);
   if (p) {
     const project = decodeURIComponent(p[1]);
-    if (new URLSearchParams(location.search).get('catchup')) { renderCatchup(project); return; }
+    const cu = new URLSearchParams(location.search).get('catchup');
+    // ?catchup=generate asks the agent (from the home card); rewrite to =1 so a
+    // reload just views, never re-triggers generation.
+    if (cu === 'generate') {
+      history.replaceState({}, '', `/p/${encodeURIComponent(project)}?catchup=1`);
+      requestCatchup(project);
+      return;
+    }
+    if (cu) { renderCatchup(project); return; }
     renderLibrary(project);
     return;
   }

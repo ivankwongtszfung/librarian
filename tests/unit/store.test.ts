@@ -422,6 +422,35 @@ describe('projectCatchup', () => {
   });
 });
 
+describe('agent-generated catchups', () => {
+  let r: Repository;
+  beforeEach(() => {
+    r = repo();
+  });
+
+  it('stores, returns the newest, and keeps version history', () => {
+    expect(r.latestCatchup('acct')).toBeNull();
+
+    const first = r.recordCatchup({ project: 'acct', bodyMd: '# v1', generatedBy: 'claude-code' });
+    expect(r.latestCatchup('acct')?.bodyMd).toBe('# v1');
+    expect(r.latestCatchup('acct')?.generatedBy).toBe('claude-code');
+
+    const second = r.recordCatchup({ project: 'acct', bodyMd: '# v2' });
+    expect(r.latestCatchup('acct')?.bodyMd).toBe('# v2'); // newest wins
+
+    const hist = r.catchupHistory('acct');
+    expect(hist).toHaveLength(2);
+    expect(hist[0].bodyMd).toBe('# v2'); // newest first
+    expect(hist.map((h) => h.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
+  it('scopes catchups by project', () => {
+    r.recordCatchup({ project: 'a', bodyMd: 'A' });
+    expect(r.latestCatchup('b')).toBeNull();
+    expect(r.catchupHistory('b')).toHaveLength(0);
+  });
+});
+
 function repoFactoryForBug(): Repository {
   return new Repository(openDb(':memory:'));
 }

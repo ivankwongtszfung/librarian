@@ -103,6 +103,22 @@ export class ReviewService {
     return { decisionId: result.decision.id };
   }
 
+  /** Store an agent-generated catchup and announce it so the project page —
+   *  open in a browser — updates to the new briefing without a reload. */
+  recordCatchup(input: { project: string; bodyMd: string; generatedBy?: string | null }): {
+    id: string;
+    createdAt: number;
+  } {
+    const cu = this.repo.recordCatchup(input);
+    this.bus.emitEvent({
+      type: 'catchup',
+      decisionId: '',
+      projectName: input.project,
+      at: Date.now(),
+    });
+    return { id: cu.id, createdAt: cu.createdAt };
+  }
+
   /**
    * Server-side long-poll. Holds the request until the verdict lands or the
    * wait expires, then returns whatever the store says.

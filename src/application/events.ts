@@ -5,7 +5,8 @@ export type LibrarianEventType =
   | 'decision.updated'
   | 'verdict'
   | 'comment'
-  | 'message';
+  | 'message'
+  | 'catchup';
 
 export interface LibrarianEvent {
   type: LibrarianEventType;

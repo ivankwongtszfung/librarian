@@ -206,6 +206,38 @@ export function createMcpServer(repo: DecisionStore, reviews: ReviewService): Mc
   );
 
   server.registerTool(
+    'record_catchup',
+    {
+      title: 'Store a project catchup you generated',
+      description:
+        'Store a catchup/briefing you generated for a project so the human reads it in the library ' +
+        'UI. Call this when asked to catch the human up on a project (e.g. via the "Catch me up" ' +
+        'button, which arrives as a message). First ground it: call get_constraints and ' +
+        'search_decisions for the project. Then write the body as markdown following the catchup ' +
+        'standard — a RIGHT NOW single focus, a 🔴 critical block (blockers / risks / red lights), ' +
+        'key decisions with their WHY, and recent activity — scannable, facts over prose, no filler. ' +
+        'Each call adds a new version; the latest shows on the project page.',
+      inputSchema: {
+        project: z.string().describe('Project name, e.g. "accounting_app"'),
+        body: z.string().describe('The catchup briefing, in markdown'),
+        agent: z.string().optional().describe('Your agent name, e.g. "claude-code"'),
+      },
+    },
+    async (args) => {
+      const r = reviews.recordCatchup({
+        project: args.project,
+        bodyMd: args.body,
+        generatedBy: args.agent,
+      });
+      return text({
+        ok: true,
+        catchup_id: r.id,
+        note: `Stored. It now shows on the ${args.project} project page.`,
+      });
+    },
+  );
+
+  server.registerTool(
     'search_decisions',
     {
       title: 'Search past decisions',
