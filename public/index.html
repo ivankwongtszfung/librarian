@@ -339,6 +339,19 @@ async function renderDiagrams() {
 function statusChip(s) { return `<span class="chip ${s}">${s.replace('_', ' ')}</span>`; }
 const when = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
+// A 401 means the cookie is missing or stale. Wrapping fetch rather than the
+// api() helper catches the raw fetches too (attachment upload, and every call in
+// catchup.html), so no request can fail silently into an empty-looking page.
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await _fetch(...args);
+  if (res.status === 401 && !location.pathname.startsWith('/login')) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    location.replace(`/login.html?next=${next}`);
+  }
+  return res;
+};
+
 async function api(path, opts) {
   const res = await fetch(`/api${path}`, {
     headers: { 'content-type': 'application/json' },

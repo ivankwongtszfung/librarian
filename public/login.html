@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Librarian — unlock</title>
+<style>
+  :root {
+    --bg: #F7F8F5; --surface: #FFFFFF; --ink: #1B231E; --muted: #5C665F;
+    --line: #DDE2DB; --green: #1B7A4A; --green-ink: #14603A; --green-soft: #E7F1E9;
+    --red: #BC4438; --red-soft: #F7EAE8;
+    --sans: "Avenir Next", Avenir, "Helvetica Neue", system-ui, sans-serif;
+    --serif: Charter, "Bitstream Charter", Cambria, Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11160F; --surface: #181F16; --ink: #E4EAE2; --muted: #93A093;
+      --line: #2A342A; --green: #4CBE7E; --green-ink: #6FD79C; --green-soft: #1A2B1F;
+      --red: #E07A6C; --red-soft: #2E1D1A;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+    font-family: var(--serif); line-height: 1.6;
+    display: flex; align-items: center; justify-content: center; padding: 1.25rem;
+  }
+  main {
+    width: 100%; max-width: 24rem; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px; padding: 1.5rem;
+  }
+  h1 {
+    font-family: var(--sans); font-size: 1.05rem; letter-spacing: -0.01em;
+    margin: 0 0 0.35rem; display: flex; align-items: center; gap: 0.5rem;
+  }
+  p.sub { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.88rem; }
+  label {
+    display: block; font-family: var(--mono); font-size: 0.7rem;
+    text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+  input {
+    width: 100%; padding: 0.6rem 0.7rem; font: inherit; font-size: 1rem;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: var(--bg); color: var(--ink);
+  }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+  button {
+    width: 100%; margin-top: 0.9rem; padding: 0.6rem;
+    font-family: var(--sans); font-size: 0.95rem; font-weight: 600;
+    border: 1px solid var(--green); border-radius: 7px;
+    background: var(--green-soft); color: var(--green-ink); cursor: pointer;
+  }
+  button[disabled] { opacity: 0.6; cursor: default; }
+  .msg {
+    margin-top: 0.9rem; padding: 0.55rem 0.7rem; border-radius: 7px;
+    font-size: 0.85rem; display: none;
+  }
+  .msg.bad { display: block; background: var(--red-soft); color: var(--red); }
+  footer {
+    margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 0.78rem;
+  }
+  code { font-family: var(--mono); font-size: 0.9em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>📚 Librarian</h1>
+  <p class="sub">This daemon is reachable off-machine, so it requires a token.</p>
+
+  <form id="f">
+    <label for="t">Access token</label>
+    <input id="t" type="password" autocomplete="current-password"
+           autocapitalize="off" autocorrect="off" spellcheck="false" required>
+    <button id="go" type="submit">Unlock</button>
+  </form>
+  <div class="msg" id="msg"></div>
+
+  <footer>
+    The token is sent once in an <code>Authorization</code> header. The daemon
+    replies with an HttpOnly cookie, which is what every later request — and the
+    live event stream — uses. The token itself never touches a URL.
+  </footer>
+</main>
+
+<script>
+  // A browser cannot set an Authorization header on a plain navigation, so this
+  // page exists to make that one header request on its behalf and trade it for
+  // the cookie. /api/health is the cheapest authenticated route to prove against.
+  const f = document.getElementById('f');
+  const input = document.getElementById('t');
+  const go = document.getElementById('go');
+  const msg = document.getElementById('msg');
+
+  // Where to land after unlocking. Only ever a same-origin path: an absolute or
+  // scheme-relative value here would turn this form into an open redirect.
+  const raw = new URLSearchParams(location.search).get('next') || '/';
+  const next = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/';
+
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.className = 'msg';
+    go.disabled = true;
+    go.textContent = 'Checking…';
+    try {
+      const res = await fetch('/api/health', {
+        headers: { authorization: `Bearer ${input.value}` },
+      });
+      if (res.ok) {
+        location.replace(next);
+        return;
+      }
+      fail(res.status === 401 ? 'That token was not accepted.' : `Daemon replied ${res.status}.`);
+    } catch {
+      fail('Could not reach the daemon.');
+    }
+  });
+
+  function fail(text) {
+    msg.textContent = text;
+    msg.className = 'msg bad';
+    go.disabled = false;
+    go.textContent = 'Unlock';
+    input.select();
+  }
+
+  input.focus();
+</script>
+</body>
+</html>

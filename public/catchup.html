@@ -241,6 +241,20 @@
 <script type="module">
 // The by-project view and the chat bar are live; the briefing above is
 // authored. A dead store degrades to the authored links, never a blank page.
+
+// A 401 means the cookie is missing or stale — send the browser to the one page
+// that can obtain one. Without this the page degrades to its authored fallback,
+// which looks like "no decisions" rather than "you are not signed in".
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await _fetch(...args);
+  if (res.status === 401 && !location.pathname.startsWith('/login')) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    location.replace(`/login.html?next=${next}`);
+  }
+  return res;
+};
+
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const when = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 const OPEN = (d) => d.status === 'pending' || d.status === 'changes_requested';
