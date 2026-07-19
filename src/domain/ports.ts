@@ -55,6 +55,11 @@ export interface DecisionStore {
   constraints(project: string, topic?: string): Constraints;
   projectCatchup(project: string): ProjectCatchup;
 
+  // Remembered session bindings (ADR-016), keyed by launch directory so a
+  // binding outlives both the daemon and the session that set it.
+  saveBinding(cwd: string, projects: string[]): void;
+  bindingFor(cwd: string): string[] | null;
+
   // Agent-generated catchups (the "Catch me up" button): stored, versioned.
   recordCatchup(input: { project: string; bodyMd: string; generatedBy?: string | null }): Catchup;
   latestCatchup(project: string): Catchup | null;
