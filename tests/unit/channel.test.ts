@@ -81,6 +81,42 @@ describe('messageToChannel', () => {
     expect(m.meta).toEqual({ kind: 'ui_message' });
   });
 
+  it('carries a highlighted passage and the section it sits in', () => {
+    const m = messageToChannel({
+      body: 'this claim is too strong',
+      context: {
+        decisionId: 'dec_1',
+        section: 'Consequences',
+        quote: 'the daemon stays loopback-only',
+      },
+    });
+    expect(m.content).toContain('section “Consequences”');
+    expect(m.content).toContain('They highlighted this passage');
+    expect(m.content).toContain('> the daemon stays loopback-only');
+    expect(m.meta.section).toBe('Consequences');
+  });
+
+  it('hands a screenshot over as a path to Read, never inline', () => {
+    const m = messageToChannel({
+      body: 'the spacing here is off',
+      context: { attachment: '/Users/x/.librarian/attachments/att_ab12.png' },
+    });
+    expect(m.content).toContain('/Users/x/.librarian/attachments/att_ab12.png');
+    expect(m.content).toContain('Read tool');
+    expect(m.meta.attachment).toBe('/Users/x/.librarian/attachments/att_ab12.png');
+  });
+
+  it('tells the agent to resubmit as a new version when it is about a decision', () => {
+    const m = messageToChannel({ body: 'please add a diagram', context: { decisionId: 'dec_9' } });
+    expect(m.content).toContain('parent_review_id="dec_9"');
+    expect(m.content).toContain('new version');
+  });
+
+  it('omits the revise instruction when no decision is in play', () => {
+    const m = messageToChannel({ body: 'just thinking out loud', context: { page: '/' } });
+    expect(m.content).not.toContain('parent_review_id');
+  });
+
   it('frames a flushed batch as one queued backlog', () => {
     const m = messageToChannel({
       body: '[1/2 · /] first\n\n[2/2 · /d/dec_1] second',

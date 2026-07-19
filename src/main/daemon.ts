@@ -1,5 +1,6 @@
 import type { Server } from 'node:http';
 import { dirname, join } from 'node:path';
+
 import { fileURLToPath } from 'node:url';
 import { ChannelRegistry } from '../application/channel-registry.js';
 import { EventBus } from '../application/events.js';
@@ -78,6 +79,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
     token: opts.token,
     publicDir: opts.publicDir ?? DEFAULT_PUBLIC,
     watchDir: opts.watchDir,
+    // Screenshots live beside the store, so they travel with it and a path
+    // handed to the agent stays valid across restarts.
+    attachmentsDir: join(dirname(opts.dbPath), 'attachments'),
   });
 
   const server = await new Promise<Server>((resolve, reject) => {
