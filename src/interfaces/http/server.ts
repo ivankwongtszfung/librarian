@@ -273,8 +273,11 @@ export function createApp(opts: HttpOptions): express.Express {
       res.status(404).json({ error: 'unknown_session' });
       return;
     }
+    // Remember it against the launch directory so the next session started
+    // there — and this one after a daemon restart — comes back bound.
+    if (session.cwd) repo.saveBinding(session.cwd, projects);
     opts.messages.flush();
-    res.json({ ok: true, session });
+    res.json({ ok: true, session, remembered: Boolean(session.cwd) });
   });
 
   app.get('/api/sessions/:id', (req: Request, res: Response) => {
@@ -486,10 +489,12 @@ export function createApp(opts: HttpOptions): express.Express {
     // session up, any global backlog). The listener is attached above first, so
     // the synchronous flush reaches this very connection.
     if (sessionKey) {
-      opts.channels.register(sessionKey, {
-        cwd: req.header('x-librarian-cwd') ?? null,
-        projects: declared,
-      });
+      const cwd = req.header('x-librarian-cwd') ?? null;
+      // A binding you set earlier outranks the cwd guess the channel arrives
+      // with (ADR-016), so "this directory does librarian work" survives a
+      // daemon restart instead of silently reverting.
+      const remembered = cwd ? repo.bindingFor(cwd) : null;
+      opts.channels.register(sessionKey, { cwd, projects: remembered ?? declared });
       opts.messages.flush();
     }
 

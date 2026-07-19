@@ -422,6 +422,45 @@ describe('projectCatchup', () => {
   });
 });
 
+describe('remembered session bindings', () => {
+  let r: Repository;
+  beforeEach(() => {
+    r = repo();
+  });
+
+  it('remembers a binding by launch directory and survives a new store', () => {
+    expect(r.bindingFor('/Users/x/Projects/all_state')).toBeNull();
+    r.saveBinding('/Users/x/Projects/all_state', ['librarian', 'all_state']);
+    expect(r.bindingFor('/Users/x/Projects/all_state')).toEqual(['librarian', 'all_state']);
+    // a different directory is unaffected
+    expect(r.bindingFor('/Users/x/Projects/other')).toBeNull();
+  });
+
+  it('overwrites rather than duplicating', () => {
+    r.saveBinding('/w', ['a']);
+    r.saveBinding('/w', ['b', 'c']);
+    expect(r.bindingFor('/w')).toEqual(['b', 'c']);
+  });
+
+  it('an empty binding forgets, so unbinding does not leave a stale row', () => {
+    r.saveBinding('/w', ['a']);
+    r.saveBinding('/w', []);
+    expect(r.bindingFor('/w')).toBeNull();
+  });
+
+  it('bounds what a caller can store', () => {
+    r.saveBinding('/w', [
+      '  spaced  ',
+      'spaced',
+      '',
+      ...Array.from({ length: 30 }, (_, i) => `p${i}`),
+    ]);
+    const bound = r.bindingFor('/w') ?? [];
+    expect(bound.length).toBeLessThanOrEqual(10);
+    expect(bound[0]).toBe('spaced'); // trimmed and deduped
+  });
+});
+
 describe('agent-generated catchups', () => {
   let r: Repository;
   beforeEach(() => {

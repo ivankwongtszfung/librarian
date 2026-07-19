@@ -857,6 +857,46 @@ export class Repository implements DecisionStore {
     };
   }
 
+  // ---------- remembered session bindings (ADR-016) ----------
+
+  /** Remember which projects a session launched from `cwd` answers for, so the
+   *  binding survives a daemon restart. The cwd is an opaque key — compared,
+   *  never resolved or executed. Bounded so a hostile caller cannot bloat the
+   *  row. An empty list forgets the binding rather than storing a useless one. */
+  saveBinding(cwd: string, projects: string[]): void {
+    const key = cwd.slice(0, 512);
+    const clean = [...new Set(projects.map((p) => p.trim().slice(0, 120)).filter(Boolean))].slice(
+      0,
+      10,
+    );
+    if (!clean.length) {
+      this.db.prepare('DELETE FROM session_bindings WHERE cwd = ?').run(key);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO session_bindings (cwd, projects, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(cwd) DO UPDATE SET projects = excluded.projects, updated_at = excluded.updated_at`,
+      )
+      .run(key, JSON.stringify(clean), now());
+  }
+
+  /** The remembered binding for a launch directory, or null. */
+  bindingFor(cwd: string): string[] | null {
+    const row = this.db
+      .prepare('SELECT projects FROM session_bindings WHERE cwd = ?')
+      .get(cwd.slice(0, 512)) as { projects: string } | undefined;
+    if (!row) return null;
+    try {
+      const parsed = JSON.parse(row.projects) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter((p): p is string => typeof p === 'string')
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   // ---------- agent-generated catchups ----------
 
   /** Store a catchup the agent generated. Each call is a new version; the
