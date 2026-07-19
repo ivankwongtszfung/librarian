@@ -96,6 +96,16 @@
   details.project>summary{padding:12px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--ink)}
   details.project>summary::before{content:none}
   .catchup-go{margin-left:auto;font:600 10px var(--m);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:3px 9px;text-decoration:none;white-space:nowrap}
+  /* connected agent sessions + what each is bound to (ADR-016) */
+  .sess{border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:10px 13px;margin-bottom:8px}
+  .sesshead{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:7px}
+  .sesshead code{font:600 11px var(--m);color:var(--ink)}
+  .sessbind{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .pchip{display:inline-flex;align-items:center;gap:5px;font:600 10.5px var(--m);color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:2px 5px 2px 9px}
+  .pchip button{border:0;background:none;color:var(--faint);cursor:pointer;font-size:11px;line-height:1;padding:0 2px}
+  .pchip button:hover{color:var(--bad,#BC4438)}
+  .sessbind select{font:500 10.5px var(--m);color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 7px;cursor:pointer}
+  .unbound{font:500 11px var(--m);color:var(--bad,#BC4438)}
   .pname{font-weight:700;font-size:15px}
   .pmeta{font:500 11px/1.5 var(--m);color:var(--faint)}
   .needs{margin-left:auto;font:600 11.5px/1 var(--d);color:var(--warn)}
@@ -175,6 +185,9 @@
   <!-- ========= PARKED — messages waiting for a session (ADR-013) ========= -->
   <div id="parked"></div>
 
+  <!-- ========= SESSIONS — who is connected, and what they answer for (ADR-016) ========= -->
+  <div id="sessions"></div>
+
   <!-- ========= BY PROJECT — live from the store ========= -->
   <h2>By project <button id="rescan" style="font:600 10px var(--m);letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:4px 10px;cursor:pointer">⟳ rescan repos</button> <span id="rescan-st" style="font:500 10.5px var(--m);color:var(--faint)"></span></h2>
   <div class="filters" id="filters"></div>
@@ -251,12 +264,35 @@ const MATCHES = (d) =>
   (filter === 'all' ? true : filter === 'pending' ? OPEN(d) : d.status === filter) &&
   (OPEN(d) || INRANGE(d.createdAt));
 
+// Live agent sessions, and rebinding which projects each answers for (ADR-016).
+// Rebinding flushes anything parked for that project, so a stuck message is one
+// click from delivery instead of requiring a session restart.
+let SESSIONS = [];
+async function bindSession(key, projects) {
+  await fetch(`/api/sessions/${encodeURIComponent(key)}/bind`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projects }),
+  }).catch(() => null);
+  renderLive();
+}
+window.bindMore = (key, project) => {
+  if (!project) return;
+  const s = SESSIONS.find((x) => x.key === key);
+  bindSession(key, [...new Set([...(s?.projects ?? []), project])]);
+};
+window.unbindSession = (key, project) => {
+  const s = SESSIONS.find((x) => x.key === key);
+  bindSession(key, (s?.projects ?? []).filter((p) => p !== project));
+};
+
 async function renderLive() {
   try {
-    const [pRes, dRes, mRes] = await Promise.all([
+    const [pRes, dRes, mRes, sRes] = await Promise.all([
       fetch('/api/projects'),
       fetch('/api/decisions'),
       fetch('/api/messages/pending'),
+      fetch('/api/sessions'),
     ]);
     const pBody = await pRes.json();
     const projects = pBody.projects ?? [];
@@ -271,6 +307,26 @@ async function renderLive() {
           <b>💬 Waiting for a session</b> — delivered the moment that project's agent connects:
           ${waiting.map((w) => `<span style="display:inline-block;margin:4px 8px 0 0"><b>${w.count}</b> for <code>${esc(w.project ?? 'anyone listening')}</code></span>`).join('')}
         </div>`
+      : '';
+
+    // Connected agent sessions and what each answers for (ADR-016). A session's
+    // project is a BINDING, not a guess from its launch directory — so when a
+    // message is parked above, bind a session here and it flushes immediately.
+    SESSIONS = ((await sRes.json().catch(() => ({}))).sessions ?? []);
+    document.getElementById('sessions').innerHTML = SESSIONS.length
+      ? `<h2>Agent sessions <span class="pmeta">${SESSIONS.length} connected · bound projects decide who gets a message</span></h2>` +
+        SESSIONS.map((s) => `<div class="sess">
+          <div class="sesshead"><code>${esc(s.key.slice(0, 16))}</code><span class="pmeta">${esc(s.cwd ?? 'unknown cwd')}</span></div>
+          <div class="sessbind">
+            ${s.projects.length
+              ? s.projects.map((p) => `<span class="pchip">${esc(p)}<button title="unbind" data-k="${esc(s.key)}" data-p="${esc(p)}" onclick="unbindSession(this.dataset.k, this.dataset.p)">✕</button></span>`).join('')
+              : '<span class="unbound">unbound — this session receives nothing</span>'}
+            <select data-k="${esc(s.key)}" onchange="bindMore(this.dataset.k, this.value); this.value='';">
+              <option value="">+ bind a project…</option>
+              ${projects.map((p) => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('')}
+            </select>
+          </div>
+        </div>`).join('')
       : '';
     const open = decisions.filter(OPEN);
     const red = decisions.filter((d) => d.status === 'rejected');
