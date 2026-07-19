@@ -313,7 +313,7 @@ async function renderLive() {
           <summary><a class="pname" href="/p/${encodeURIComponent(p.name)}" style="color:inherit">${esc(p.name)}</a>
             <span class="pmeta">${p.decisionCount} decision${p.decisionCount === 1 ? '' : 's'} · last ${when(activity(p.name))}</span>
             ${hot ? `<span class="needs">${hot} waiting on you</span>` : ''}
-            <a class="catchup-go" href="/p/${encodeURIComponent(p.name)}?catchup=1" onclick="event.stopPropagation()">⚡ catch me up</a></summary>
+            <a class="catchup-go" href="/p/${encodeURIComponent(p.name)}?catchup=generate" onclick="event.stopPropagation()">⚡ catch me up</a></summary>
           ${ds.map((d) => `<div class="drow ${OPEN(d) ? 'hotrow' : ''}"><span class="chip ${d.status}">${d.status.replace('_', ' ')}</span><a href="/d/${d.id}">${esc(d.title)}</a><span class="when">${d.kind} · ${when(d.createdAt)}${d.versionCount > 1 ? ` · v${d.versionCount}` : ''}</span>${
             d.reason && (d.status === 'rejected' || d.status === 'changes_requested') ? `<span class="reason">✕ ${esc(d.reason)}</span>` : ''
           }</div>`).join('')}

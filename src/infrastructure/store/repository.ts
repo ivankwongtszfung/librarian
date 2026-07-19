@@ -1,6 +1,7 @@
 import type { DecisionStore, QueuedMessage } from '../../domain/ports.js';
 import { assertTransition } from '../../domain/state-machine.js';
 import type {
+  Catchup,
   CatchupItem,
   Comment,
   Decision,
@@ -23,6 +24,14 @@ import type {
 } from '../../domain/types.js';
 import { contentHash, newId, now } from '../../util/ids.js';
 import type { Db } from './db.js';
+
+interface CatchupRow {
+  id: string;
+  project_id: string;
+  body_md: string;
+  generated_by: string | null;
+  created_at: number;
+}
 
 interface DecisionRow {
   id: string;
@@ -848,6 +857,49 @@ export class Repository implements DecisionStore {
     };
   }
 
+  // ---------- agent-generated catchups ----------
+
+  /** Store a catchup the agent generated. Each call is a new version; the
+   *  latest by created_at is what the project page shows. */
+  recordCatchup(input: { project: string; bodyMd: string; generatedBy?: string | null }): Catchup {
+    const project = this.upsertProject(input.project);
+    const cu: Catchup = {
+      id: newId('cu'),
+      project: input.project,
+      bodyMd: input.bodyMd,
+      generatedBy: input.generatedBy ?? null,
+      createdAt: now(),
+    };
+    this.db
+      .prepare(
+        'INSERT INTO catchups (id, project_id, body_md, generated_by, created_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(cu.id, project.id, cu.bodyMd, cu.generatedBy, cu.createdAt);
+    return cu;
+  }
+
+  /** The current catchup for a project — the most recent generation. */
+  latestCatchup(project: string): Catchup | null {
+    const row = this.db
+      .prepare(
+        `SELECT c.* FROM catchups c JOIN projects p ON p.id = c.project_id
+         WHERE p.name = ? ORDER BY c.created_at DESC, c.rowid DESC LIMIT 1`,
+      )
+      .get(project) as CatchupRow | undefined;
+    return row ? rowToCatchup(row, project) : null;
+  }
+
+  /** Past generations, newest first — the version history behind the catchup. */
+  catchupHistory(project: string, limit = 20): Catchup[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.* FROM catchups c JOIN projects p ON p.id = c.project_id
+         WHERE p.name = ? ORDER BY c.created_at DESC, c.rowid DESC LIMIT ?`,
+      )
+      .all(project, limit) as CatchupRow[];
+    return rows.map((r) => rowToCatchup(r, project));
+  }
+
   // ---------- fts ----------
 
   /** FTS is a derived index: rebuilt from decisions + latest body + latest reason. */
@@ -892,6 +944,16 @@ export class Repository implements DecisionStore {
       submittedAt: r.submitted_at as number,
     };
   }
+}
+
+function rowToCatchup(r: CatchupRow, project: string): Catchup {
+  return {
+    id: r.id,
+    project,
+    bodyMd: r.body_md,
+    generatedBy: r.generated_by,
+    createdAt: r.created_at,
+  };
 }
 
 /** The reason written by the ADR-008 reclaim — a system event, not a human

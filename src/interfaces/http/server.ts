@@ -218,10 +218,33 @@ export function createApp(opts: HttpOptions): express.Express {
     res.json({ ok: true, roots: roots.size, files, known, imported });
   });
 
-  // The "Catch me up" button: generate a project's briefing live from the
-  // store, in the project-state standard's shape (RIGHT NOW / critical / key
-  // decisions with their real why / activity). Computed at click time, so it is
-  // never stale — no hand-maintained state.html to drift.
+  // The "Catch me up" button asks the agent to write the briefing: a canned
+  // prompt is routed (ADR-013) to the project's own session, which generates it
+  // and stores it via the record_catchup MCP tool. If no session for the
+  // project is connected, the request parks (ADR-011) and runs when one shows.
+  app.post('/api/projects/:name/catchup/request', (req: Request, res: Response) => {
+    const project = req.params.name;
+    const { queued } = opts.messages.post(catchupPrompt(project), {
+      project,
+      kind: 'catchup_request',
+    });
+    // A session for this project must be connected for the request to be acted
+    // on now; otherwise it waits (and the pending surface shows it).
+    const connected = opts.channels.hasProject(project);
+    res.json({ ok: true, queued, connected });
+  });
+
+  // The stored catchup the agent generated (latest) + its version history.
+  app.get('/api/projects/:name/catchup-doc', (req: Request, res: Response) => {
+    const latest = repo.latestCatchup(req.params.name);
+    const history = repo
+      .catchupHistory(req.params.name)
+      .map((c) => ({ id: c.id, createdAt: c.createdAt, generatedBy: c.generatedBy }));
+    res.json({ latest, history });
+  });
+
+  // A deterministic auto-summary from the store — the instant fallback the UI
+  // shows before (or instead of) an agent-written catchup.
   app.get('/api/projects/:name/catchup', (req: Request, res: Response) => {
     res.json(repo.projectCatchup(req.params.name));
   });
@@ -495,6 +518,25 @@ function transcriptCwd(transcriptPath: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** The instruction the "Catch me up" button sends to a project's agent. It is
+ *  routed to that project's session (ADR-013); the agent grounds itself in the
+ *  library, writes the briefing, and stores it with the record_catchup tool. */
+function catchupPrompt(project: string): string {
+  return [
+    `[Catch me up] The human clicked "Catch me up" for project "${project}".`,
+    '',
+    `Write them a catchup briefing for "${project}" and store it by calling the`,
+    'librarian tool record_catchup (project + body markdown). First ground it:',
+    `call get_constraints and search_decisions for "${project}" so it reflects`,
+    'reality, not memory.',
+    '',
+    'Follow the catchup standard: a RIGHT NOW single focus, a 🔴 critical block',
+    '(blockers / risks / red lights), key decisions with their WHY, and recent',
+    'activity. Scannable, facts over prose, no filler. This is data for the',
+    'human — do not ask questions back, just generate and store it.',
+  ].join('\n');
 }
 
 function sha256(value: string): Buffer {

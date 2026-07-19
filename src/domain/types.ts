@@ -184,7 +184,18 @@ export interface Notification {
   url?: string;
 }
 
-/** One decision as it appears in a generated catchup briefing. */
+/** An agent-generated project briefing, stored and versioned (the "Catch me
+ *  up" button). Not a decision — a snapshot the human reads in the UI. */
+export interface Catchup {
+  id: string;
+  project: string;
+  bodyMd: string;
+  /** The agent/session that wrote it, for provenance. */
+  generatedBy: string | null;
+  createdAt: number;
+}
+
+/** One decision as it appears in the deterministic auto-summary fallback. */
 export interface CatchupItem {
   id: string;
   title: string;

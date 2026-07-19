@@ -1,4 +1,5 @@
 import type {
+  Catchup,
   Comment,
   Constraints,
   Decision,
@@ -53,6 +54,11 @@ export interface DecisionStore {
   search(query: string, filters?: SearchFilters): SearchHit[];
   constraints(project: string, topic?: string): Constraints;
   projectCatchup(project: string): ProjectCatchup;
+
+  // Agent-generated catchups (the "Catch me up" button): stored, versioned.
+  recordCatchup(input: { project: string; bodyMd: string; generatedBy?: string | null }): Catchup;
+  latestCatchup(project: string): Catchup | null;
+  catchupHistory(project: string, limit?: number): Catchup[];
 
   // Chat-bar messages (ADR-011): durable rows, delivered in batches. "Sent"
   // is only ever claimed about a committed row.
