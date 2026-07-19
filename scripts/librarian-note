@@ -1,0 +1,63 @@
+#!/bin/zsh
+# Quick note to the agent about whatever you are looking at (macOS).
+#
+#   librarian-note [project]
+#
+# Bind it to a global hotkey and it becomes: press → type → Enter. No browser
+# extension, no screenshot machinery, no navigating to the review UI.
+#
+# It fills in WHICH page you meant on its own: the front browser tab's URL, or
+# the frontmost app's name for anything else. That context rides along to the
+# agent, so you never type "on the billing page" again.
+#
+# Screenshots are the other script (librarian-shot); this one is text only,
+# which is why it needs nothing but curl.
+
+set -u
+PROJECT="${1:-librarian}"
+DAEMON="${LIBRARIAN_URL:-http://127.0.0.1:7801}"
+
+# Where am I? A browser gives a URL; anything else gives its name.
+WHERE=$(osascript <<'APPLESCRIPT' 2>/dev/null
+tell application "System Events"
+  set frontApp to name of first application process whose frontmost is true
+end tell
+if frontApp is "Google Chrome" then
+  tell application "Google Chrome" to return URL of active tab of front window
+else if frontApp is "Safari" then
+  tell application "Safari" to return URL of current tab of front window
+else if frontApp is "Arc" then
+  tell application "Arc" to return URL of active tab of front window
+else
+  return frontApp
+end if
+APPLESCRIPT
+)
+[ -z "${WHERE:-}" ] && WHERE="unknown"
+
+NOTE=$(osascript -e "text returned of (display dialog \"Note to the ${PROJECT} agent:\" default answer \"\" with title \"librarian\" buttons {\"Cancel\",\"Send\"} default button \"Send\")" 2>/dev/null)
+[ -z "${NOTE:-}" ] && exit 0
+
+# Build the JSON with python so quotes/newlines/emoji in the note can't break it.
+BODY=$(python3 -c '
+import json, sys
+print(json.dumps({"body": sys.argv[1], "context": {"project": sys.argv[2], "page": sys.argv[3]}}))
+' "$NOTE" "$PROJECT" "$WHERE")
+
+RESULT=$(curl -s -X POST "$DAEMON/api/messages" -H 'content-type: application/json' --data "$BODY")
+
+# Say honestly whether it reached an agent or is parked waiting for one.
+python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+except Exception:
+    print("librarian: daemon not reachable"); raise SystemExit(1)
+project = d.get("project") or "that project"
+if d.get("delivered"):
+    print("sent")
+elif d.get("queued"):
+    print("queued — agent busy")
+else:
+    print("PARKED — no session bound to " + project + ". Bind one in the catchup UI.")
+' "$RESULT"
