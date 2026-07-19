@@ -256,6 +256,27 @@ export function createApp(opts: HttpOptions): express.Express {
     res.json(repo.projectCatchup(req.params.name));
   });
 
+  // Which agent sessions are connected and what each is bound to (ADR-016).
+  // Without this, diagnosing a mis-delivered message meant inspecting OS
+  // processes — a message that cannot be delivered has to be visible.
+  app.get('/api/sessions', (_req: Request, res: Response) => {
+    res.json({ sessions: opts.channels.list() });
+  });
+
+  // Rebind a live session. The cwd guess is only a default; this is the truth.
+  // Binding may give parked messages a home, so flush right after.
+  app.post('/api/sessions/:key/bind', (req: Request, res: Response) => {
+    const raw = req.body?.projects;
+    const projects = parseProjects(Array.isArray(raw) ? raw.join(',') : raw);
+    const session = opts.channels.bind(req.params.key, projects);
+    if (!session) {
+      res.status(404).json({ error: 'unknown_session' });
+      return;
+    }
+    opts.messages.flush();
+    res.json({ ok: true, session });
+  });
+
   app.get('/api/sessions/:id', (req: Request, res: Response) => {
     res.json({ sessionId: req.params.id, decisions: repo.getSessionDecisions(req.params.id) });
   });
@@ -436,26 +457,34 @@ export function createApp(opts: HttpOptions): express.Express {
     });
     res.write(': connected\n\n');
 
-    // Route by project (ADR-013): a channel session declares its project here;
-    // the browser (EventSource can't set headers) declares none and sees all.
-    const mine = req.header('x-librarian-project');
+    // Route by project (ADR-013/016). A channel session presents a key, its cwd,
+    // and the projects it believes it handles; the browser (EventSource cannot
+    // set headers) presents none and therefore sees everything.
+    const declared = parseProjects(req.header('x-librarian-project'));
+    const sessionKey =
+      req.header('x-librarian-session') ?? (declared.length ? `ses_anon_${randomId()}` : null);
+
     const onEvent = (event: LibrarianEvent) => {
-      // A session only ever receives its OWN project's messages, or global
-      // (unprojected) ones. Non-message events stay unscoped (a verdict is read
-      // by decision id; its path is a later decision).
-      if (event.type === 'message' && event.projectName && mine && event.projectName !== mine) {
-        return;
+      // A session only ever receives messages for a project it is bound to, or
+      // global (unprojected) ones. The binding is looked up LIVE (ADR-016) so a
+      // rebind takes effect at once — capturing it here would freeze it forever.
+      if (event.type === 'message' && event.projectName) {
+        const bound = opts.channels.projectsOf(sessionKey);
+        if (bound.length && !bound.includes(event.projectName)) return;
       }
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
     bus.on('event', onEvent);
 
-    // A declared session joins the registry so parked messages know a home now
-    // exists; connecting flushes anything waiting for its project (and, if it is
-    // the first session up, any global backlog). The listener is registered
-    // above first, so the synchronous flush reaches this very connection.
-    if (mine) {
-      opts.channels.add(mine);
+    // Registering tells parked messages a home now exists; connecting flushes
+    // anything waiting for this session's projects (and, if it is the first
+    // session up, any global backlog). The listener is attached above first, so
+    // the synchronous flush reaches this very connection.
+    if (sessionKey) {
+      opts.channels.register(sessionKey, {
+        cwd: req.header('x-librarian-cwd') ?? null,
+        projects: declared,
+      });
       opts.messages.flush();
     }
 
@@ -465,7 +494,7 @@ export function createApp(opts: HttpOptions): express.Express {
     req.on('close', () => {
       clearInterval(heartbeat);
       bus.off('event', onEvent);
-      if (mine) opts.channels.remove(mine);
+      if (sessionKey) opts.channels.unregister(sessionKey);
     });
   });
 
@@ -586,6 +615,24 @@ function catchupPrompt(project: string): string {
     'activity. Scannable, facts over prose, no filler. This is data for the',
     'human — do not ask questions back, just generate and store it.',
   ].join('\n');
+}
+
+/** A session may hold several projects: `librarian,all_state` (ADR-016). */
+function parseProjects(header: unknown): string[] {
+  if (typeof header !== 'string') return [];
+  return [
+    ...new Set(
+      header
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 10);
+}
+
+/** Identifies a connection from a channel too old to present a session key. */
+function randomId(): string {
+  return createHash('sha256').update(`${Date.now()}:${Math.random()}`).digest('hex').slice(0, 12);
 }
 
 function sha256(value: string): Buffer {

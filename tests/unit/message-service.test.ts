@@ -24,7 +24,7 @@ describe('MessageService', () => {
     clockNow = 1_000_000;
     // A session is listening, so global/unprojected messages have a home.
     registry = new ChannelRegistry();
-    registry.add('demo');
+    registry.register('ses_demo', { projects: ['demo'] });
     svc = new MessageService(repo, bus, registry, () => clockNow);
   });
 
@@ -97,7 +97,7 @@ describe('MessageService', () => {
     svc.post('about accounting', { project: 'acct', page: '/p/acct' });
     expect(messageEvents()).toHaveLength(0);
 
-    registry.add('acct'); // the accounting_app channel connects…
+    registry.register('ses_acct', { projects: ['acct'] }); // the accounting_app channel connects…
     svc.flush(); // …which triggers a flush
 
     const events = messageEvents();
@@ -108,7 +108,7 @@ describe('MessageService', () => {
   });
 
   it('never mixes projects in one batch — one turn per project', () => {
-    registry.add('acct');
+    registry.register('ses_acct', { projects: ['acct'] });
     svc.reportPresence('working');
     svc.post('for demo', { project: 'demo', page: '/p/demo' });
     svc.post('for acct', { project: 'acct', page: '/p/acct' });
@@ -122,7 +122,7 @@ describe('MessageService', () => {
   });
 
   it('batches multiple messages for the SAME project as one framed turn', () => {
-    registry.add('acct');
+    registry.register('ses_acct', { projects: ['acct'] });
     svc.reportPresence('working');
     svc.post('first', { project: 'acct', page: '/p/acct' });
     svc.post('second', { project: 'acct', page: '/p/acct' });

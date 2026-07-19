@@ -8,6 +8,7 @@
 // dropped stream costs latency, because the verdict is a committed row the agent
 // can still read via get_review.
 
+import { randomBytes } from 'node:crypto';
 import { basename } from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -151,11 +152,24 @@ export async function runChannel(): Promise<void> {
   const token = process.env.LIBRARIAN_TOKEN;
   const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {};
 
-  // This session's project, declared to the daemon so a message finds the right
-  // session (ADR-013). Defaults to the launch directory's name; `LIBRARIAN_PROJECT`
-  // overrides it (e.g. a claude-lib wrapper exporting basename $PWD).
-  const project = process.env.LIBRARIAN_PROJECT || basename(process.cwd());
-  const eventHeaders = { ...headers, 'x-librarian-project': project };
+  // Who this session is, and what it works on (ADR-013 + ADR-016).
+  //
+  // The key identifies the session so the daemon can hold a *binding* the human
+  // can change later — `basename(cwd)` is only a starting guess, and it is wrong
+  // whenever you work on one project from another's directory. Set
+  // LIBRARIAN_PROJECT to state it (comma-separated for several projects), and
+  // LIBRARIAN_SESSION_KEY when something else already knows this session's id.
+  const sessionKey = process.env.LIBRARIAN_SESSION_KEY || `ses_${randomBytes(8).toString('hex')}`;
+  const projects = (process.env.LIBRARIAN_PROJECT || basename(process.cwd()))
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const eventHeaders = {
+    ...headers,
+    'x-librarian-session': sessionKey,
+    'x-librarian-cwd': process.cwd(),
+    'x-librarian-project': projects.join(','),
+  };
 
   const mcp = new Server(
     { name: 'librarian-channel', version: '0.1.0' },
@@ -168,7 +182,7 @@ export async function runChannel(): Promise<void> {
     },
   );
   await mcp.connect(new StdioServerTransport());
-  diag(`connected as project "${project}"; watching ${base}/api/events`);
+  diag(`connected as ${projects.join(', ')} (session ${sessionKey}); watching ${base}/api/events`);
 
   const send = (m: ChannelMessage): void => {
     diag(`push verdict ${m.meta.decision_id} → ${m.meta.status}`);
