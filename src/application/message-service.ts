@@ -41,17 +41,25 @@ export class MessageService {
     if (state === 'idle') this.flush();
   }
 
-  /** @returns queued=true when the agent is working and the message waits. */
-  post(body: string, context: Record<string, string> | null): { queued: boolean } {
-    this.store.addMessage(body, context);
-    if (this.agentIsWorking()) return { queued: true };
-    this.flush();
-    return { queued: false };
+  /**
+   * @returns `queued` when the agent is working and the message deliberately
+   * waits; `delivered` when it actually reached a session. Both false means it
+   * **parked** — stored, but no session is bound to its project. The caller must
+   * be able to tell those apart, or the UI ends up claiming "sent" to nobody.
+   */
+  post(
+    body: string,
+    context: Record<string, string> | null,
+  ): { queued: boolean; delivered: boolean } {
+    const msg = this.store.addMessage(body, context);
+    if (this.agentIsWorking()) return { queued: true, delivered: false };
+    return { queued: false, delivered: this.flush().includes(msg.id) };
   }
 
-  flush(): void {
+  /** @returns the ids actually delivered — empty when nothing had a home. */
+  flush(): string[] {
     const pending = this.store.undeliveredMessages();
-    if (!pending.length) return;
+    if (!pending.length) return [];
 
     // Route by project (ADR-013): group by the target project so a batch never
     // mixes projects — each group is ONE turn to the sessions for that project.
@@ -78,6 +86,7 @@ export class MessageService {
       for (const m of msgs) delivered.push(m.id);
     }
     if (delivered.length) this.store.markMessagesDelivered(delivered);
+    return delivered;
   }
 
   /** Emit one group as a single channel turn — plain for one, framed for many. */

@@ -384,8 +384,13 @@ export function createApp(opts: HttpOptions): express.Express {
     // Durable first, delivery scheduled by presence (ADR-011) and routing
     // (ADR-013): delivered when a matching session is listening and the agent
     // is free/unknown, queued while it works or until such a session connects.
-    const { queued } = opts.messages.post(body.trim(), Object.keys(ctx).length ? ctx : null);
-    res.json({ ok: true, queued, persisted, project });
+    const { queued, delivered } = opts.messages.post(
+      body.trim(),
+      Object.keys(ctx).length ? ctx : null,
+    );
+    // parked = stored, but no session is bound to its project. Reported so the
+    // UI can say so instead of claiming it reached an agent.
+    res.json({ ok: true, queued, delivered, parked: !queued && !delivered, persisted, project });
   });
 
   // Claude Code hooks report the agent's turn state (ADR-011): working on

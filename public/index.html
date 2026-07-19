@@ -168,6 +168,7 @@
   .chat button { font-family: var(--sans); font-weight: 600; font-size: 0.85rem; background: var(--green); color: #fff; border: 1px solid var(--green); border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; }
   .chat .st { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 6rem; text-align: right; }
   .chat .st.ok { color: var(--green-ink); }
+  .chat .st.warn { color: var(--amber); }
 
   /* precise context: what the mouse pointed at, and any pasted screenshot */
   .chat .chips { max-width: 62rem; margin: 0 auto; padding: 0.55rem 1.25rem 0; display: flex; gap: 0.45rem; flex-wrap: wrap; }
@@ -786,10 +787,18 @@ async function sendChat() {
     // The pointed-at context belongs to the message that just left.
     pickedQuote = null; pickedShot = null; renderChips();
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* best effort */ }
-    chatSt.textContent = out.queued
-      ? '✓ queued — agent busy'
-      : out.persisted ? '✓ agent + thread' : '✓ sent to agent';
-    chatSt.className = 'st ok';
+    // Never claim delivery that didn't happen: a parked message is stored but
+    // has no session bound to its project, and saying "sent" would be a lie.
+    if (out.parked) {
+      chatSt.textContent = `⏳ parked — no ${out.project ?? 'matching'} session`;
+      chatSt.className = 'st warn';
+      chatSt.title = 'Stored, not delivered. Bind a session to this project on the catchup page.';
+    } else {
+      chatSt.textContent = out.queued
+        ? '✓ queued — agent busy'
+        : out.persisted ? '✓ agent + thread' : '✓ sent to agent';
+      chatSt.className = 'st ok';
+    }
     if (out.persisted && location.pathname.startsWith('/d/')) render();
   } else { chatSt.textContent = 'failed — daemon up?'; }
   setTimeout(() => { chatSt.textContent = ''; }, 4000);
