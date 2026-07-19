@@ -169,6 +169,18 @@
   .chat .st { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 6rem; text-align: right; }
   .chat .st.ok { color: var(--green-ink); }
 
+  /* precise context: what the mouse pointed at, and any pasted screenshot */
+  .chat .chips { max-width: 62rem; margin: 0 auto; padding: 0.55rem 1.25rem 0; display: flex; gap: 0.45rem; flex-wrap: wrap; }
+  .chip-ctx { display: inline-flex; align-items: center; gap: 0.4rem; max-width: 34rem;
+              font-family: var(--mono); font-size: 0.7rem; color: var(--muted);
+              background: var(--green-soft); border: 1px solid var(--green); border-radius: 999px;
+              padding: 0.22rem 0.5rem 0.22rem 0.6rem; }
+  .chip-ctx b { color: var(--green-ink); font-weight: 600; white-space: nowrap; }
+  .chip-ctx .q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip-ctx img { height: 1.3rem; width: 1.9rem; object-fit: cover; border-radius: 3px; border: 1px solid var(--line); }
+  .chip-ctx button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 0.8rem; line-height: 1; padding: 0 0.1rem; }
+  .chip-ctx button:hover { color: var(--red); }
+
   /* generated catchup briefing (the "Catch me up" button) */
   .cu-go { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.03em; text-transform: uppercase;
            color: var(--green-ink); background: var(--green-soft); border: 1px solid var(--green);
@@ -210,9 +222,11 @@
   <div class="filters" id="filters"></div>
 </header>
 <main id="app"><p class="empty">Loading…</p></main>
-<div class="chat"><div class="row">
+<div class="chat">
+  <div class="chips" id="chat-chips" hidden></div>
+  <div class="row">
   <select id="chat-ctx" title="What this message is about"><option value="">about: this page</option></select>
-  <input id="chat-in" type="text" placeholder="Tell the agent something — the chosen context rides along…">
+  <input id="chat-in" type="text" placeholder="Select text in the doc, or paste a screenshot — then tell the agent…">
   <button id="chat-send">Send</button>
   <span class="st" id="chat-st"></span>
 </div></div>
@@ -675,14 +689,89 @@ async function loadCtxPicker() {
     .join('');
   if ([...chatCtx.options].some((o) => o.value === keep)) chatCtx.value = keep;
 }
+// ---- precise context: point at a passage, or paste a screenshot ----
+// Both ride along with the next message so the agent knows exactly what the
+// human means. A selection also becomes the stored comment's anchor quote.
+let pickedQuote = null; // { text, section }
+let pickedShot = null;  // { path, url }
+
+function renderChips() {
+  const box = document.getElementById('chat-chips');
+  const out = [];
+  if (pickedQuote) {
+    const label = pickedQuote.section ? `§ ${pickedQuote.section}` : 'selection';
+    const t = pickedQuote.text;
+    out.push(`<span class="chip-ctx"><b>${esc(label)}</b><span class="q">“${esc(t.slice(0, 90))}${t.length > 90 ? '…' : ''}”</span><button title="drop" onclick="clearQuote()">✕</button></span>`);
+  }
+  if (pickedShot) {
+    out.push(`<span class="chip-ctx"><img src="${pickedShot.url}" alt=""><b>screenshot</b><button title="drop" onclick="clearShot()">✕</button></span>`);
+  }
+  box.innerHTML = out.join('');
+  box.hidden = !out.length;
+}
+window.clearQuote = () => { pickedQuote = null; renderChips(); };
+window.clearShot = () => { pickedShot = null; renderChips(); };
+
+// The nearest heading ABOVE the selection names the section it lives in.
+function nearestHeading(el) {
+  for (let n = el; n && n !== document.body; n = n.parentElement) {
+    for (let p = n.previousElementSibling; p; p = p.previousElementSibling) {
+      if (/^H[1-3]$/.test(p.tagName)) return p.textContent.trim().slice(0, 120);
+    }
+  }
+  return '';
+}
+
+// Selecting text inside a rendered doc arms the next message with that passage.
+document.addEventListener('mouseup', () => {
+  const sel = window.getSelection();
+  const text = String(sel ?? '').trim();
+  if (!text) return; // a plain click never clears an armed quote
+  const node = sel.anchorNode;
+  const el = node?.nodeType === 1 ? node : node?.parentElement;
+  if (!el?.closest?.('.doc')) return; // only selections inside a doc count
+  pickedQuote = { text: text.slice(0, 1200), section: nearestHeading(el) };
+  renderChips();
+});
+
+// Paste or drop a screenshot: upload it and keep the PATH — the agent reads
+// the file itself, because the channel carries text only.
+async function uploadShot(file) {
+  if (!file || !file.type?.startsWith('image/')) return;
+  chatSt.textContent = 'uploading…'; chatSt.className = 'st';
+  const dataUrl = await new Promise((resolve) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.readAsDataURL(file);
+  });
+  const res = await api('/attachments', { method: 'POST', body: { dataUrl } });
+  if (res.status === 200) {
+    pickedShot = { path: res.body.path, url: res.body.url };
+    chatSt.textContent = ''; renderChips();
+  } else {
+    chatSt.textContent = res.body?.error === 'too_large' ? 'image too large (5 MB)' : 'upload failed';
+  }
+}
+chatIn.addEventListener('paste', (e) => {
+  const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'));
+  if (item) { e.preventDefault(); uploadShot(item.getAsFile()); }
+});
+const chatBar = document.querySelector('.chat');
+chatBar.addEventListener('dragover', (e) => e.preventDefault());
+chatBar.addEventListener('drop', (e) => { e.preventDefault(); uploadShot(e.dataTransfer?.files?.[0]); });
+
 async function sendChat() {
   const body = chatIn.value.trim();
   if (!body) return;
   chatSt.textContent = 'sending…'; chatSt.className = 'st';
   const chosen = chatCtx.selectedOptions[0];
-  const context = chatCtx.value
-    ? { page: location.pathname, ...pageCtx, decisionId: chatCtx.value, title: chosen?.dataset.title ?? '' }
-    : { page: location.pathname, ...pageCtx };
+  const context = {
+    page: location.pathname,
+    ...pageCtx,
+    ...(chatCtx.value ? { decisionId: chatCtx.value, title: chosen?.dataset.title ?? '' } : {}),
+    ...(pickedQuote ? { quote: pickedQuote.text, section: pickedQuote.section } : {}),
+    ...(pickedShot ? { attachment: pickedShot.path } : {}),
+  };
   const res = await fetch('/api/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -691,6 +780,8 @@ async function sendChat() {
   if (res?.ok) {
     const out = await res.json().catch(() => ({}));
     chatIn.value = '';
+    // The pointed-at context belongs to the message that just left.
+    pickedQuote = null; pickedShot = null; renderChips();
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* best effort */ }
     chatSt.textContent = out.queued
       ? '✓ queued — agent busy'

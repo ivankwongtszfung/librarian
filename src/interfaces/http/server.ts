@@ -11,6 +11,11 @@ import type { DecisionStore } from '../../domain/ports.js';
 import { VerdictError } from '../../domain/state-machine.js';
 import type { DecisionKind, DecisionStatus } from '../../domain/types.js';
 import {
+  AttachmentError,
+  resolveAttachment,
+  saveDataUrl,
+} from '../../infrastructure/service/attachments.js';
+import {
   classifyDoc,
   projectNameFromFilePath,
   titleFromMarkdown,
@@ -33,6 +38,8 @@ export interface HttpOptions {
    *  projects OBSERVED there that have no decisions yet — so the catchup can
    *  show what librarian is blind to, not just what it knows. */
   watchDir?: string;
+  /** Where pasted screenshots are stored. The agent is handed the path. */
+  attachmentsDir?: string;
 }
 
 export function createApp(opts: HttpOptions): express.Express {
@@ -324,7 +331,10 @@ export function createApp(opts: HttpOptions): express.Express {
     const ctx: Record<string, string> = {};
     if (context && typeof context === 'object') {
       for (const [k, v] of Object.entries(context as Record<string, unknown>)) {
-        if (typeof v === 'string' && v) ctx[k.slice(0, 40)] = v.slice(0, 300);
+        // A quoted passage is the point of the message, so it gets room; the
+        // rest are labels and stay short.
+        const cap = k === 'quote' ? 1200 : 300;
+        if (typeof v === 'string' && v) ctx[k.slice(0, 40)] = v.slice(0, cap);
       }
     }
     let persisted = false;
@@ -332,7 +342,9 @@ export function createApp(opts: HttpOptions): express.Express {
       try {
         reviews.postComments({
           decisionId: ctx.decisionId,
-          comments: [{ body: body.trim() }],
+          // A mouse selection becomes the comment's anchor, so the thread shows
+          // the human's remark attached to the exact passage they highlighted.
+          comments: [{ body: body.trim(), anchorQuote: ctx.quote ?? null }],
           authorType: 'human',
         });
         persisted = true;
@@ -367,6 +379,43 @@ export function createApp(opts: HttpOptions): express.Express {
     }
     opts.messages.reportPresence(state);
     res.json({ ok: true, working: opts.messages.agentIsWorking() });
+  });
+
+  // A screenshot pasted into the chat bar. Stored on disk beside the store; the
+  // agent is handed the PATH and reads the file itself, because the channel
+  // carries text only. Returns the browser URL for the preview thumbnail too.
+  app.post('/api/attachments', (req: Request, res: Response) => {
+    if (!opts.attachmentsDir) {
+      res.status(503).json({ error: 'attachments_disabled' });
+      return;
+    }
+    try {
+      const saved = saveDataUrl(opts.attachmentsDir, req.body?.dataUrl);
+      res.json({
+        ok: true,
+        file: saved.file,
+        path: saved.path,
+        bytes: saved.bytes,
+        url: `/api/attachments/${saved.file}`,
+      });
+    } catch (err) {
+      if (err instanceof AttachmentError) {
+        res.status(422).json({ error: err.code });
+        return;
+      }
+      res.status(500).json({ error: 'write_failed' });
+    }
+  });
+
+  app.get('/api/attachments/:file', (req: Request, res: Response) => {
+    const found = opts.attachmentsDir
+      ? resolveAttachment(opts.attachmentsDir, req.params.file)
+      : null;
+    if (!found) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.type(found.mime).sendFile(found.path);
   });
 
   // Messages parked because no session for their project is connected yet
