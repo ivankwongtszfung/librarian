@@ -699,7 +699,10 @@ function renderChips() {
   const box = document.getElementById('chat-chips');
   const out = [];
   if (pickedQuote) {
-    const label = pickedQuote.section ? `§ ${pickedQuote.section}` : 'selection';
+    // Keep the section label short: the passage is the useful half of the chip,
+    // and a long heading would otherwise squeeze it out of view entirely.
+    const s = pickedQuote.section;
+    const label = s ? `§ ${s.length > 32 ? `${s.slice(0, 31)}…` : s}` : 'selection';
     const t = pickedQuote.text;
     out.push(`<span class="chip-ctx"><b>${esc(label)}</b><span class="q">“${esc(t.slice(0, 90))}${t.length > 90 ? '…' : ''}”</span><button title="drop" onclick="clearQuote()">✕</button></span>`);
   }
