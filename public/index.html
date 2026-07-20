@@ -136,6 +136,34 @@
   .comment .who { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-bottom: 0.25rem; }
   .comment blockquote { margin: 0 0 0.4rem; padding-left: 0.7rem; border-left: 2px solid var(--green);
                         color: var(--muted); font-size: 0.86rem; }
+  /* Comment bodies run through the same markdown renderer as a decision doc,
+     scaled down: a comment is a remark, so its headings must not out-shout the
+     document it is attached to. */
+  .c-body > *:first-child { margin-top: 0; }
+  .c-body > *:last-child { margin-bottom: 0; }
+  .c-body h1, .c-body h2, .c-body h3 {
+    font-family: var(--sans); font-size: 0.95rem; margin: 0.9rem 0 0.35rem; line-height: 1.3;
+  }
+  .c-body p { margin: 0.5rem 0; }
+  .c-body ul, .c-body ol { padding-left: 1.2rem; margin: 0.5rem 0; }
+  .c-body li { margin: 0.15rem 0; }
+  .c-body code { font-family: var(--mono); font-size: 0.85em; background: var(--code-bg);
+                 padding: 0.1em 0.3em; border-radius: 4px; }
+  .c-body pre { background: var(--code-bg); padding: 0.7rem; border-radius: 6px;
+                overflow-x: auto; font-size: 0.8rem; }
+  .c-body pre code { background: none; padding: 0; }
+  .c-body a { color: var(--green-ink); }
+  .c-body hr { border: 0; border-top: 1px solid var(--line); margin: 0.8rem 0; }
+  .c-body .tbl { overflow-x: auto; margin: 0.6rem 0; }
+  .c-body table { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+  .c-body th, .c-body td { border: 1px solid var(--line); padding: 0.3rem 0.5rem;
+                           text-align: left; vertical-align: top; }
+  .c-body th { font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.04em;
+               text-transform: uppercase; color: var(--muted); background: var(--code-bg); }
+  /* The anchor quote is the doc speaking; a quote the comment itself writes is
+     the commenter speaking. Keep them visually distinct. */
+  .c-body blockquote { margin: 0.5rem 0; padding: 0.1rem 0 0.1rem 0.8rem;
+                       border-left: 2px solid var(--line); color: var(--muted); font-size: 0.9em; }
   .versions { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
   .versions button { font-family: var(--mono); font-size: 0.75rem; padding: 0.25rem 0.6rem;
                      border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
@@ -596,7 +624,7 @@ function renderThread(d) {
       <div class="comment">
         <div class="who">${esc(c.author)} · ${when(c.createdAt)}</div>
         ${c.anchorQuote ? `<blockquote>${esc(c.anchorQuote)}</blockquote>` : ''}
-        <div>${esc(c.body).replace(/\n/g, '<br>')}</div>
+        <div class="c-body">${md(c.body)}</div>
       </div>`).join('')}`)
     .join('')}</div>`;
 }
