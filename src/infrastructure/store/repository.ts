@@ -734,13 +734,14 @@ export class Repository implements DecisionStore {
    * version on that decision after the message was sent. It can attribute work
    * the agent was already doing. It is a pointer to look at, not proof of cause.
    */
-  messageHistory(limit = 50): MessageHistoryItem[] {
+  messageHistory(limit = 50, offset = 0): MessageHistoryItem[] {
     const rows = this.db
       // rowid breaks the tie: two messages sent inside the same millisecond are
       // common (paste, hit enter, paste again) and created_at alone leaves their
-      // order undefined — the same trap catchups already hit.
-      .prepare('SELECT * FROM messages ORDER BY created_at DESC, rowid DESC LIMIT ?')
-      .all(limit) as Array<{
+      // order undefined — the same trap catchups already hit. It also makes
+      // OFFSET paging stable, which an ambiguous sort would not be.
+      .prepare('SELECT * FROM messages ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as Array<{
       id: string;
       body: string;
       context: string | null;

@@ -459,7 +459,11 @@ export function createApp(opts: HttpOptions): express.Express {
   app.get('/api/messages/history', (req: Request, res: Response) => {
     const asked = Number.parseInt(String(req.query.limit ?? ''), 10);
     const limit = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), 200) : 50;
-    res.json({ messages: opts.repo.messageHistory(limit) });
+    const from = Number.parseInt(String(req.query.offset ?? ''), 10);
+    const offset = Number.isFinite(from) && from > 0 ? from : 0;
+    const messages = opts.repo.messageHistory(limit, offset);
+    // `more` saves the client a wasted round trip to discover the end.
+    res.json({ messages, offset, more: messages.length === limit });
   });
 
   // ---------- SSE ----------

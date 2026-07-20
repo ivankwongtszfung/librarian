@@ -70,7 +70,7 @@ export interface DecisionStore {
   addMessage(body: string, context: Record<string, string> | null): QueuedMessage;
   undeliveredMessages(): QueuedMessage[];
   markMessagesDelivered(ids: string[]): void;
-  messageHistory(limit?: number): MessageHistoryItem[];
+  messageHistory(limit?: number, offset?: number): MessageHistoryItem[];
 }
 
 export interface QueuedMessage {

@@ -242,7 +242,7 @@
   <div class="chips" id="chat-chips" hidden></div>
   <div class="hist" id="chat-hist" hidden></div>
   <div class="row">
-  <button id="chat-hist-btn" class="ghost" title="What you've sent, and what came back">history</button>
+  <button id="chat-hist-btn" type="button" class="ghost" title="What you've sent, and what came back">history</button>
   <input id="chat-in" type="text" placeholder="Select text in the doc, or paste a screenshot — then tell the agent…">
   <button id="chat-send">Send</button>
   <span class="st" id="chat-st"></span>
@@ -745,35 +745,84 @@ function statusTag(m) {
   return '<span class="tag">✓ delivered</span>';
 }
 
-async function loadHistory() {
-  const { body } = await api('/messages/history?limit=40');
-  const msgs = body.messages ?? [];
-  if (!msgs.length) {
-    histBox.innerHTML = '<div class="empty">Nothing sent yet.</div>';
-    return;
-  }
-  histBox.innerHTML = msgs.map((m) => {
-    const where = m.context?.title
-      ? `on “${esc(String(m.context.title).slice(0, 46))}”`
-      : m.context?.page ? `on ${esc(m.context.page)}` : '';
-    const quoted = m.context?.quote ? ' · pointed at a passage' : '';
-    const shot = m.context?.attachment ? ' · screenshot' : '';
-    return `<div class="m">
-      ${statusTag(m)}
-      <span class="said">${esc(m.body.slice(0, 180))}${m.body.length > 180 ? '…' : ''}
-        <span class="where">${when(m.createdAt)}${where ? ' · ' + where : ''}${quoted}${shot}</span></span>
-      ${reactionCell(m)}
-    </div>`;
-  }).join('');
+// Ten is what fits without the panel swallowing the page; the rest arrives as
+// you scroll. `loading` guards the burst of scroll events near the bottom from
+// firing the same fetch several times.
+const HIST_PAGE = 10;
+let histCount = 0;
+let histMore = true;
+let histLoading = false;
+
+function historyRow(m) {
+  const where = m.context?.title
+    ? `on “${esc(String(m.context.title).slice(0, 46))}”`
+    : m.context?.page ? `on ${esc(m.context.page)}` : '';
+  const quoted = m.context?.quote ? ' · pointed at a passage' : '';
+  const shot = m.context?.attachment ? ' · screenshot' : '';
+  return `<div class="m">
+    ${statusTag(m)}
+    <span class="said">${esc(m.body.slice(0, 180))}${m.body.length > 180 ? '…' : ''}
+      <span class="where">${when(m.createdAt)}${where ? ' · ' + where : ''}${quoted}${shot}</span></span>
+    ${reactionCell(m)}
+  </div>`;
 }
 
-histBtn.addEventListener('click', async () => {
+// `reset` reloads everything already on screen — used when the panel opens and
+// when an event lands — so a live update cannot leave the list half-stale.
+async function loadHistory({ reset = false } = {}) {
+  if (histLoading) return;
+  if (!reset && !histMore) return;
+  histLoading = true;
+  const offset = reset ? 0 : histCount;
+  const limit = reset ? Math.max(histCount, HIST_PAGE) : HIST_PAGE;
+  try {
+    const { status, body } = await api(`/messages/history?limit=${limit}&offset=${offset}`);
+    if (status !== 200) throw new Error(`daemon replied ${status}`);
+    const msgs = body.messages ?? [];
+    const html = msgs.map(historyRow).join('');
+    if (reset) {
+      histBox.innerHTML = html || '<div class="empty">Nothing sent yet.</div>';
+      histCount = msgs.length;
+    } else {
+      histBox.insertAdjacentHTML('beforeend', html);
+      histCount += msgs.length;
+    }
+    histMore = body.more ?? false;
+  } catch (err) {
+    // Never leave "Loading…" on screen: a stuck spinner reads as a hung daemon
+    // when the real answer is a failed request the human can just retry.
+    histMore = false;
+    const retry = '<button type="button" class="ghost" id="hist-retry">retry</button>';
+    const line = `<div class="empty">Could not load history — ${esc(String(err.message ?? err))}. ${retry}</div>`;
+    if (reset || !histCount) histBox.innerHTML = line;
+    else histBox.insertAdjacentHTML('beforeend', line);
+    histBox.querySelector('#hist-retry')?.addEventListener('click', () => {
+      histCount = 0;
+      histMore = true;
+      histBox.innerHTML = '<div class="empty">Loading…</div>';
+      loadHistory({ reset: true });
+    });
+  } finally {
+    histLoading = false;
+  }
+}
+
+// Load the next page as the bottom comes into view.
+histBox.addEventListener('scroll', () => {
+  const nearEnd = histBox.scrollTop + histBox.clientHeight >= histBox.scrollHeight - 40;
+  if (nearEnd) loadHistory();
+});
+
+histBtn.addEventListener('click', async (e) => {
+  e.preventDefault();
   const opening = histBox.hidden;
   histBox.hidden = !opening;
   histBtn.classList.toggle('on', opening);
   if (opening) {
     histBox.innerHTML = '<div class="empty">Loading…</div>';
-    await loadHistory();
+    histCount = 0;
+    histMore = true;
+    await loadHistory({ reset: true });
   }
 });
 // ---- precise context: point at a passage, or paste a screenshot ----
@@ -895,7 +944,9 @@ chatIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); }
 // Keep an open history panel live: a message flipping from parked to delivered,
 // or an agent's reply landing, is exactly what you opened it to watch.
 new EventSource('/api/events').addEventListener('message', () => {
-  if (!histBox.hidden) loadHistory();
+  // reset, not append: a new message lands at the top, so re-render the pages
+  // already loaded rather than paging further into a list that just shifted.
+  if (!histBox.hidden) loadHistory({ reset: true });
 });
 
 render();
