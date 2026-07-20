@@ -966,51 +966,61 @@ const revBtn = document.getElementById('chat-rev-btn');
 let reviewing = false;
 let staged = [];
 
-const revKey = (id) => `librarian.review:${id}`;
 // Read from the URL, not pageCtx: pageCtx is assigned inside renderDecision, so
 // anything consulting it at the top of render() sees the page you just left.
 const reviewTarget = () => /^\/d\/(.+)$/.exec(location.pathname)?.[1] ?? null;
+// Buffering is useful anywhere, not only on a doc — holding three thoughts about
+// the library and sending them as one turn beats interrupting the agent three
+// times. Off a doc the drafts key on the page instead of a decision.
+const revKey = () => `librarian.review:${reviewTarget() ?? location.pathname}`;
 
 function saveStaged() {
-  const id = reviewTarget();
-  if (!id) return;
   // Drafts outlive the page: a review interrupted by a reload, a daemon
   // restart, or a closed laptop is still the review you were writing.
   try {
-    if (staged.length) localStorage.setItem(revKey(id), JSON.stringify(staged));
-    else localStorage.removeItem(revKey(id));
+    if (staged.length) localStorage.setItem(revKey(), JSON.stringify(staged));
+    else localStorage.removeItem(revKey());
   } catch { /* private mode */ }
 }
 
 function loadStaged() {
-  const id = reviewTarget();
   staged = [];
-  if (!id) return;
   try {
-    const raw = localStorage.getItem(revKey(id));
+    const raw = localStorage.getItem(revKey());
     if (raw) staged = JSON.parse(raw);
   } catch { staged = []; }
 }
 
 function renderReview() {
   if (!staged.length) {
-    revBox.innerHTML =
-      '<div class="empty">Review mode on — type a comment and press Enter to add it. Select a passage first to anchor it.</div>';
+    revBox.innerHTML = reviewTarget()
+      ? '<div class="empty">Review mode on — type a comment and press Enter to add it. Select a passage first to anchor it.</div>'
+      : '<div class="empty">Buffering on — type a note and press Enter to add it. They go to the agent together, as one turn.</div>';
   } else {
+    const n = staged.length;
+    const onDoc = !!reviewTarget();
     revBox.innerHTML =
-      `<div class="hd">${staged.length} comment${staged.length > 1 ? 's' : ''} held — not sent yet</div>` +
+      `<div class="hd">${n} ${onDoc ? 'comment' : 'note'}${n > 1 ? 's' : ''} held — not sent yet</div>` +
       staged.map((s, i) => `<div class="d">
         <span class="n">${i + 1}</span>
         <span class="txt">${esc(s.body)}
           ${s.quote ? `<blockquote>${esc(s.quote.slice(0, 160))}${s.quote.length > 160 ? '…' : ''}</blockquote>` : ''}
+          ${s.shot ? '<blockquote>📎 screenshot attached</blockquote>' : ''}
         </span>
-        <button type="button" class="rm" title="Drop this comment" data-i="${i}">✕</button>
+        <button type="button" class="rm" title="Drop this one" data-i="${i}">✕</button>
       </div>`).join('') +
-      `<div class="go">
-        <button type="button" class="just" data-go="comment">Submit ${staged.length} comment${staged.length > 1 ? 's' : ''}</button>
+      // Off a decision page there is nothing to cast a verdict on, so the only
+      // sensible action is the one that reduces back-and-forth: send the lot as
+      // a single agent turn.
+      (onDoc
+        ? `<div class="go">
+        <button type="button" class="just" data-go="comment">Submit ${n} comment${n > 1 ? 's' : ''}</button>
         <button type="button" class="chg" data-go="changes">Submit — request changes</button>
         <button type="button" class="app" data-go="approve">Submit — approve</button>
-      </div>`;
+      </div>`
+        : `<div class="go">
+        <button type="button" class="app" data-go="send">Send ${n} note${n > 1 ? 's' : ''} to the agent</button>
+      </div>`);
   }
   revBtn.textContent = staged.length ? `review (${staged.length})` : 'review';
 }
@@ -1030,7 +1040,14 @@ revBox.addEventListener('click', (e) => {
 function stageComment() {
   const body = chatIn.value.trim();
   if (!body) return;
-  staged.push({ body, quote: pickedQuote?.text ?? null, section: pickedQuote?.section ?? null });
+  // Carry the screenshot too — dropping it here would silently discard the
+  // thing the note is about.
+  staged.push({
+    body,
+    quote: pickedQuote?.text ?? null,
+    section: pickedQuote?.section ?? null,
+    shot: pickedShot?.path ?? null,
+  });
   chatIn.value = '';
   pickedQuote = null; pickedShot = null; renderChips();
   try { localStorage.removeItem(DRAFT_KEY); } catch { /* best effort */ }
@@ -1041,9 +1058,62 @@ function stageComment() {
   setTimeout(() => { chatSt.textContent = ''; }, 2500);
 }
 
+// Off a decision page the held notes go out as ONE message rather than N. The
+// goal is a single agent turn; N rows would be N turns unless the presence
+// batcher happened to coalesce them, and "happened to" is not a guarantee.
+async function sendStagedAsMessage() {
+  const numbered = staged
+    .map((s, i) => {
+      const parts = [`${i + 1}. ${s.body}`];
+      if (s.quote) parts.push(`   > ${s.quote.slice(0, 400)}`);
+      if (s.shot) parts.push(`   screenshot: ${s.shot} — use the Read tool to view it`);
+      return parts.join('\n');
+    })
+    .join('\n\n');
+  const body = staged.length === 1 ? staged[0].body : `${staged.length} notes:\n\n${numbered}`;
+  const first = staged[0];
+  const context = {
+    page: location.pathname,
+    ...pageCtx,
+    ...(staged.length === 1 && first.quote ? { quote: first.quote, section: first.section } : {}),
+    ...(staged.length === 1 && first.shot ? { attachment: first.shot } : {}),
+  };
+  const res = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body, context }),
+  }).catch(() => null);
+  if (!res?.ok) {
+    chatSt.textContent = 'failed — daemon up?';
+    chatSt.className = 'st warn';
+    return false;
+  }
+  const out = await res.json().catch(() => ({}));
+  // Same honesty as a single message: never claim delivery that did not happen.
+  if (out.parked) {
+    chatSt.textContent = `⏳ parked — no ${out.project ?? 'matching'} session`;
+    chatSt.className = 'st warn';
+  } else if (out.queued) {
+    chatSt.textContent = '⏳ queued — agent busy';
+    chatSt.className = 'st';
+  } else {
+    chatSt.textContent = '✓ sent'; chatSt.className = 'st ok';
+  }
+  return true;
+}
+
 async function submitReview(kind) {
+  if (!staged.length) return;
   const id = reviewTarget();
-  if (!id || !staged.length) return;
+  if (!id) {
+    chatSt.textContent = 'sending…'; chatSt.className = 'st';
+    if (!(await sendStagedAsMessage())) return;
+    staged = [];
+    saveStaged();
+    renderReview();
+    setTimeout(() => { chatSt.textContent = ''; }, 4000);
+    return;
+  }
   chatSt.textContent = 'submitting…'; chatSt.className = 'st';
   // The reason is what shows on the verdict, so it must say something. The
   // first comment is the most informative thing available.
@@ -1054,7 +1124,12 @@ async function submitReview(kind) {
   const res = await api(`/decisions/${id}/comments`, {
     method: 'POST',
     body: {
-      comments: staged.map((s) => ({ body: s.body, anchor_quote: s.quote })),
+      // A comment row has no attachment column, so a screenshot rides in the
+      // body as a path the agent can Read — the same handoff the channel uses.
+      comments: staged.map((s) => ({
+        body: s.shot ? `${s.body}\n\nscreenshot: ${s.shot}` : s.body,
+        anchor_quote: s.quote,
+      })),
       request_changes: kind === 'changes',
       reason,
     },
@@ -1082,12 +1157,14 @@ async function submitReview(kind) {
 }
 
 function setReviewing(on) {
-  reviewing = on && !!reviewTarget();
+  reviewing = on;
   revBox.hidden = !reviewing;
   revBtn.classList.toggle('on', reviewing);
   chatSend.textContent = reviewing ? 'Add' : 'Send';
   chatIn.placeholder = reviewing
-    ? 'Comment on this doc — held until you submit the review…'
+    ? reviewTarget()
+      ? 'Comment on this doc — held until you submit the review…'
+      : 'Note for the agent — held until you send them together…'
     : 'Select text in the doc, or paste a screenshot — then tell the agent…';
   if (reviewing) renderReview();
 }
@@ -1096,25 +1173,18 @@ function setReviewing(on) {
 // because it is defined earlier in the file than these bindings.
 let reviewingFor = null;
 function syncReviewToPage() {
-  const id = reviewTarget();
-  if (id === reviewingFor) return;
-  reviewingFor = id;
-  if (!id) { setReviewing(false); staged = []; revBtn.textContent = 'review'; return; }
+  const key = revKey();
+  if (key === reviewingFor) return;
+  reviewingFor = key;
   loadStaged();
-  // A doc you left mid-review reopens in review mode: the held comments are
-  // meaningless anywhere else, and silently hiding them loses the work.
+  // A page you left mid-review reopens in review mode: notes held about one
+  // page mean nothing on another, and silently hiding them loses the work.
   setReviewing(staged.length > 0);
   revBtn.textContent = staged.length ? `review (${staged.length})` : 'review';
 }
 
 revBtn.addEventListener('click', (e) => {
   e.preventDefault();
-  if (!reviewTarget()) {
-    chatSt.textContent = 'open a decision first';
-    chatSt.className = 'st warn';
-    setTimeout(() => { chatSt.textContent = ''; }, 3000);
-    return;
-  }
   if (!reviewing) loadStaged();
   setReviewing(!reviewing);
 });
