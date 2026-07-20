@@ -454,6 +454,14 @@ export function createApp(opts: HttpOptions): express.Express {
     res.json({ waiting: opts.messages.pendingByProject() });
   });
 
+  // What you said and what came back. Delivery is recorded fact; the reaction is
+  // a correlation the store labels honestly (see repository.messageHistory).
+  app.get('/api/messages/history', (req: Request, res: Response) => {
+    const asked = Number.parseInt(String(req.query.limit ?? ''), 10);
+    const limit = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), 200) : 50;
+    res.json({ messages: opts.repo.messageHistory(limit) });
+  });
+
   // ---------- SSE ----------
   app.get('/api/events', (req: Request, res: Response) => {
     res.writeHead(200, {

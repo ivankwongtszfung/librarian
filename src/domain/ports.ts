@@ -70,6 +70,7 @@ export interface DecisionStore {
   addMessage(body: string, context: Record<string, string> | null): QueuedMessage;
   undeliveredMessages(): QueuedMessage[];
   markMessagesDelivered(ids: string[]): void;
+  messageHistory(limit?: number): MessageHistoryItem[];
 }
 
 export interface QueuedMessage {
@@ -78,6 +79,25 @@ export interface QueuedMessage {
   context: Record<string, string> | null;
   createdAt: number;
   deliveredAt: number | null;
+}
+
+/**
+ * What the agent did after a message reached it — or, honestly, whether we can
+ * tell at all. Delivery is a fact the daemon owns; a *reaction* is an inference,
+ * and only a message that named a decision can be correlated to one.
+ */
+export type MessageReaction =
+  // Strong: the message named a decision, and the agent then answered on it.
+  | { kind: 'comment'; at: number; decisionId: string; ref: string; excerpt: string }
+  | { kind: 'version'; at: number; decisionId: string; ref: string; num: number }
+  // Weak: the message named only a project, and the agent then did something in
+  // it. Correlation by time alone — the UI must not phrase this as a reply.
+  | { kind: 'activity'; at: number; decisionId: string; title: string; num: number }
+  | { kind: 'none' }
+  | { kind: 'untracked' };
+
+export interface MessageHistoryItem extends QueuedMessage {
+  reaction: MessageReaction;
 }
 
 /** Push-notification sink — the daemon's outbound alert channel (ntfy today). */

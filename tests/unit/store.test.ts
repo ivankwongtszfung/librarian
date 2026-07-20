@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VerdictError } from '../../src/domain/state-machine.js';
 import { openDb } from '../../src/infrastructure/store/db.js';
 import { Repository } from '../../src/infrastructure/store/repository.js';
@@ -493,3 +493,71 @@ describe('agent-generated catchups', () => {
 function repoFactoryForBug(): Repository {
   return new Repository(openDb(':memory:'));
 }
+
+describe('message history', () => {
+  let r: Repository;
+  // Real clock resolution is milliseconds, and a test writes several rows inside
+  // one. Drive time explicitly so these assert the intended semantics —
+  // "the agent answered after I asked" — rather than clock granularity.
+  beforeEach(() => {
+    r = repo();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-19T00:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const later = () => vi.advanceTimersByTime(1000);
+
+  const doc = () =>
+    r.submit({ project: 'p', title: 'T', body: 'b', kind: 'adr', source: 'mcp' }).decision;
+
+  it('reports a message that named no decision as untracked, never as unanswered', () => {
+    r.addMessage('the sidebar looks wrong', { page: '/p/librarian' });
+    // "we cannot tell" and "the agent ignored you" are different claims.
+    expect(r.messageHistory()[0].reaction.kind).toBe('untracked');
+  });
+
+  it('reports no reaction when the agent has not answered yet', () => {
+    r.addMessage('please tighten section 2', { decisionId: doc().id });
+    expect(r.messageHistory()[0].reaction.kind).toBe('none');
+  });
+
+  it('sees an agent comment made after the message', () => {
+    const d = doc();
+    r.addMessage('why this approach?', { decisionId: d.id });
+    later();
+    r.addComments(d.id, r.upsertParticipant('agent', 'claude-code'), [
+      { body: 'Because the alternative loses verdicts.' },
+    ]);
+    const reaction = r.messageHistory()[0].reaction;
+    expect(reaction.kind).toBe('comment');
+    if (reaction.kind === 'comment') expect(reaction.excerpt).toContain('loses verdicts');
+  });
+
+  it('ignores a human comment — only the agent counts as a reaction', () => {
+    const d = doc();
+    r.addMessage('question', { decisionId: d.id });
+    later();
+    r.addComments(d.id, r.upsertParticipant('human', 'ivan'), [{ body: 'my own note' }]);
+    expect(r.messageHistory()[0].reaction.kind).toBe('none');
+  });
+
+  it('does not credit a comment that predates the message', () => {
+    const d = doc();
+    r.addComments(d.id, r.upsertParticipant('agent', 'claude-code'), [
+      { body: 'said this before you asked' },
+    ]);
+    later();
+    r.addMessage('now a question', { decisionId: d.id });
+    expect(r.messageHistory()[0].reaction.kind).toBe('none');
+  });
+
+  it('newest message comes first', () => {
+    r.addMessage('first', null);
+    r.addMessage('second', null); // same millisecond on purpose — rowid must decide
+    const all = r.messageHistory();
+    expect(all[0].body).toBe('second');
+    expect(all).toHaveLength(2);
+  });
+});

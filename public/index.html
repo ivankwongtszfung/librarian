@@ -164,8 +164,23 @@
   .chat { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); }
   .chat .row { max-width: 62rem; margin: 0 auto; padding: 0.75rem 1.25rem; display: flex; gap: 0.55rem; align-items: center; }
   .chat input { flex: 1; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.75rem; }
-  .chat select { max-width: 12rem; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.35rem; }
   .chat button { font-family: var(--sans); font-weight: 600; font-size: 0.85rem; background: var(--green); color: #fff; border: 1px solid var(--green); border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; }
+  .chat button.ghost { font-family: var(--mono); font-weight: 400; font-size: 0.7rem; background: var(--bg); color: var(--muted); border-color: var(--line); padding: 0.55rem 0.7rem; }
+  .chat button.ghost.on { background: var(--green-soft); color: var(--green-ink); border-color: var(--green); }
+
+  /* history: what you sent, and whether anything came back */
+  .hist { max-width: 62rem; margin: 0 auto; padding: 0.6rem 1.25rem 0; max-height: 42vh; overflow-y: auto; }
+  .hist .m { border-top: 1px solid var(--line); padding: 0.55rem 0; display: flex; gap: 0.7rem; align-items: baseline; }
+  .hist .m:first-child { border-top: 0; }
+  .hist .said { flex: 1; min-width: 0; font-size: 0.85rem; }
+  .hist .said .where { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); display: block; margin-top: 0.15rem; }
+  .hist .re { font-size: 0.8rem; color: var(--muted); max-width: 20rem; }
+  .hist .re a { color: var(--green-ink); }
+  .hist .tag { font-family: var(--mono); font-size: 0.63rem; letter-spacing: 0.03em; border-radius: 999px;
+               padding: 0.15rem 0.5rem; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); }
+  .hist .tag.ok { background: var(--green-soft); color: var(--green-ink); border-color: var(--green); }
+  .hist .tag.warn { background: var(--amber-soft); color: var(--amber); border-color: var(--amber); }
+  .hist .empty { color: var(--muted); font-size: 0.82rem; padding: 0.4rem 0; }
   .chat .st { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 6rem; text-align: right; }
   .chat .st.ok { color: var(--green-ink); }
   .chat .st.warn { color: var(--amber); }
@@ -225,8 +240,9 @@
 <main id="app"><p class="empty">Loading…</p></main>
 <div class="chat">
   <div class="chips" id="chat-chips" hidden></div>
+  <div class="hist" id="chat-hist" hidden></div>
   <div class="row">
-  <select id="chat-ctx" title="What this message is about"><option value="">about: this page</option></select>
+  <button id="chat-hist-btn" class="ghost" title="What you've sent, and what came back">history</button>
   <input id="chat-in" type="text" placeholder="Select text in the doc, or paste a screenshot — then tell the agent…">
   <button id="chat-send">Send</button>
   <span class="st" id="chat-st"></span>
@@ -685,7 +701,6 @@ new EventSource('/api/events').addEventListener('message', (e) => {
 // picker retargets it to any open review without navigating there.
 const chatIn = document.getElementById('chat-in');
 const chatSt = document.getElementById('chat-st');
-const chatCtx = document.getElementById('chat-ctx');
 
 // The draft belongs to the human, not the page lifecycle: it survives
 // reloads, daemon restarts, and browser restarts until it is sent.
@@ -694,15 +709,73 @@ try { chatIn.value = localStorage.getItem(DRAFT_KEY) ?? ''; } catch { /* private
 chatIn.addEventListener('input', () => {
   try { localStorage.setItem(DRAFT_KEY, chatIn.value); } catch { /* best effort */ }
 });
-async function loadCtxPicker() {
-  const { body } = await api('/decisions');
-  const open = (body.decisions ?? []).filter((d) => d.status === 'pending' || d.status === 'changes_requested');
-  const keep = chatCtx.value;
-  chatCtx.innerHTML = '<option value="">about: this page</option>' + open
-    .map((d) => `<option value="${d.id}" data-title="${esc(d.title)}">about: ${esc(d.title.slice(0, 44))}…</option>`)
-    .join('');
-  if ([...chatCtx.options].some((o) => o.value === keep)) chatCtx.value = keep;
+// ---- history: what you said, and whether anything came back ----
+// Delivery is a fact the daemon stamped. A reaction is a correlation, so the
+// wording stays weaker than the wording for delivery — and "we cannot tell"
+// (no decision was named) never renders as "no reply".
+const histBox = document.getElementById('chat-hist');
+const histBtn = document.getElementById('chat-hist-btn');
+
+function reactionCell(m) {
+  const r = m.reaction ?? { kind: 'untracked' };
+  if (r.kind === 'version') {
+    return `<span class="re">↳ revised to <a href="/d/${r.decisionId}" onclick="event.preventDefault(); route('/d/${r.decisionId}')">v${r.num}</a></span>`;
+  }
+  if (r.kind === 'comment') {
+    return `<span class="re" title="${esc(r.excerpt)}">↳ agent replied: ${esc(r.excerpt.slice(0, 60))}${r.excerpt.length > 60 ? '…' : ''}</span>`;
+  }
+  if (r.kind === 'activity') {
+    // Deliberately not "replied": only time links this to what you said.
+    return `<span class="re" title="Correlated by time only — this message named a project, not a decision.">↳ then submitted <a href="/d/${r.decisionId}" onclick="event.preventDefault(); route('/d/${r.decisionId}')">${esc(r.title.slice(0, 34))}${r.title.length > 34 ? '…' : ''}</a> v${r.num}</span>`;
+  }
+  if (r.kind === 'none') {
+    return `<span class="re">${m.deliveredAt ? 'nothing since' : ''}</span>`;
+  }
+  return '<span class="re" title="This message named neither a decision nor a project, so there is nothing to correlate against.">not tracked</span>';
 }
+
+function statusTag(m) {
+  if (!m.deliveredAt) return '<span class="tag warn">⏳ parked</span>';
+  // "answered" is only claimed where the link is real. Time-correlated activity
+  // stays at "delivered" — the row still shows what happened, without asserting
+  // the agent was responding to you.
+  if (m.reaction?.kind === 'version' || m.reaction?.kind === 'comment') {
+    return '<span class="tag ok">✓ answered</span>';
+  }
+  return '<span class="tag">✓ delivered</span>';
+}
+
+async function loadHistory() {
+  const { body } = await api('/messages/history?limit=40');
+  const msgs = body.messages ?? [];
+  if (!msgs.length) {
+    histBox.innerHTML = '<div class="empty">Nothing sent yet.</div>';
+    return;
+  }
+  histBox.innerHTML = msgs.map((m) => {
+    const where = m.context?.title
+      ? `on “${esc(String(m.context.title).slice(0, 46))}”`
+      : m.context?.page ? `on ${esc(m.context.page)}` : '';
+    const quoted = m.context?.quote ? ' · pointed at a passage' : '';
+    const shot = m.context?.attachment ? ' · screenshot' : '';
+    return `<div class="m">
+      ${statusTag(m)}
+      <span class="said">${esc(m.body.slice(0, 180))}${m.body.length > 180 ? '…' : ''}
+        <span class="where">${when(m.createdAt)}${where ? ' · ' + where : ''}${quoted}${shot}</span></span>
+      ${reactionCell(m)}
+    </div>`;
+  }).join('');
+}
+
+histBtn.addEventListener('click', async () => {
+  const opening = histBox.hidden;
+  histBox.hidden = !opening;
+  histBtn.classList.toggle('on', opening);
+  if (opening) {
+    histBox.innerHTML = '<div class="empty">Loading…</div>';
+    await loadHistory();
+  }
+});
 // ---- precise context: point at a passage, or paste a screenshot ----
 // Both ride along with the next message so the agent knows exactly what the
 // human means. A selection also becomes the stored comment's anchor quote.
@@ -781,11 +854,12 @@ async function sendChat() {
   const body = chatIn.value.trim();
   if (!body) return;
   chatSt.textContent = 'sending…'; chatSt.className = 'st';
-  const chosen = chatCtx.selectedOptions[0];
+  // No "which decision" picker any more: on a doc page pageCtx already carries
+  // decisionId and title (the picker only ever restated what the page knew), and
+  // from the library you say which doc by opening it.
   const context = {
     page: location.pathname,
     ...pageCtx,
-    ...(chatCtx.value ? { decisionId: chatCtx.value, title: chosen?.dataset.title ?? '' } : {}),
     ...(pickedQuote ? { quote: pickedQuote.text, section: pickedQuote.section } : {}),
     ...(pickedShot ? { attachment: pickedShot.path } : {}),
   };
@@ -818,8 +892,11 @@ async function sendChat() {
 }
 document.getElementById('chat-send').addEventListener('click', sendChat);
 chatIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
-loadCtxPicker();
-new EventSource('/api/events').addEventListener('message', loadCtxPicker);
+// Keep an open history panel live: a message flipping from parked to delivered,
+// or an agent's reply landing, is exactly what you opened it to watch.
+new EventSource('/api/events').addEventListener('message', () => {
+  if (!histBox.hidden) loadHistory();
+});
 
 render();
 </script>
