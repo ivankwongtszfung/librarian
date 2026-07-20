@@ -287,10 +287,21 @@ export function createApp(opts: HttpOptions): express.Express {
   // ---------- writes ----------
   app.post('/api/decisions/:id/verdict', (req: Request, res: Response) => {
     const { to, reason, by } = req.body ?? {};
-    if (to !== 'approved' && to !== 'rejected' && to !== 'changes_requested') {
+    // 'superseded' is the reconciliation verdict: it retires a record in favour
+    // of another without erasing it. The state machine has always allowed it
+    // (including from 'approved', its only legal exit) but nothing exposed it,
+    // so a duplicate the library could model was one it could not resolve —
+    // which is how ADR-014 came to sit in the store twice, once approved with
+    // no verdict behind it. The reason must name the survivor.
+    if (
+      to !== 'approved' &&
+      to !== 'rejected' &&
+      to !== 'changes_requested' &&
+      to !== 'superseded'
+    ) {
       res.status(422).json({
         error: 'invalid_verdict',
-        detail: 'to must be approved|rejected|changes_requested',
+        detail: 'to must be approved|rejected|changes_requested|superseded',
       });
       return;
     }
