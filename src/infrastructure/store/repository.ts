@@ -1,7 +1,7 @@
 import type {
   DecisionStore,
   MessageHistoryItem,
-  MessageReaction,
+  MessageReply,
   QueuedMessage,
 } from '../../domain/ports.js';
 import { assertTransition } from '../../domain/state-machine.js';
@@ -712,27 +712,13 @@ export class Repository implements DecisionStore {
   }
 
   /**
-   * How long after a message a project-level submission still counts as
-   * plausibly related. Without a bound, every message eventually points at
-   * whatever was submitted next — hours later and about something else
-   * entirely — which reads as a connection that is not there. Two hours is a
-   * working session; past that, "nothing since" is the more honest answer.
-   */
-  private static readonly ACTIVITY_WINDOW_MS = 2 * 60 * 60 * 1000;
-
-  /**
-   * The chat-bar history: what you said, and what came back.
+   * The chat-bar history: what you said, and what the agent answered.
    *
-   * Delivery is a fact — `delivered_at` is stamped when the daemon hands the row
-   * to a session. A *reaction* is an inference, so it is reported as one. Only a
-   * message that named a decision can be correlated at all; anything typed from
-   * a library or project page is `untracked`, never `none`, because "we cannot
-   * tell" and "the agent ignored you" are different claims and the UI must not
-   * merge them.
-   *
-   * The correlation is deliberately crude: the first agent comment or new
-   * version on that decision after the message was sent. It can attribute work
-   * the agent was already doing. It is a pointer to look at, not proof of cause.
+   * Both halves are facts now (ADR-019). This used to correlate an answer from
+   * timing — the first agent comment or submission after a message — with a
+   * two-hour window and a project-level fallback, because the agent's replies
+   * were not stored anywhere. A stored reply removed the need to guess, and all
+   * of that inference was deleted rather than improved.
    */
   messageHistory(limit = 50, offset = 0): MessageHistoryItem[] {
     const rows = this.db
@@ -740,7 +726,15 @@ export class Repository implements DecisionStore {
       // common (paste, hit enter, paste again) and created_at alone leaves their
       // order undefined — the same trap catchups already hit. It also makes
       // OFFSET paging stable, which an ambiguous sort would not be.
-      .prepare('SELECT * FROM messages ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?')
+      //
+      // Replies are excluded: a reply belongs *under* the message it answers,
+      // not beside it as another entry awaiting one of its own.
+      .prepare(
+        `SELECT * FROM messages
+          WHERE in_reply_to IS NULL
+          ORDER BY created_at DESC, rowid DESC
+          LIMIT ? OFFSET ?`,
+      )
       .all(limit, offset) as Array<{
       id: string;
       body: string;
@@ -749,92 +743,73 @@ export class Repository implements DecisionStore {
       delivered_at: number | null;
     }>;
 
-    const firstComment = this.db.prepare(
-      `SELECT c.id, c.body, c.created_at
-         FROM comments c JOIN participants p ON p.id = c.participant_id
-        WHERE c.decision_id = ? AND p.type = 'agent' AND c.created_at > ?
-        ORDER BY c.created_at LIMIT 1`,
-    );
-    const firstVersion = this.db.prepare(
-      `SELECT id, num, submitted_at FROM versions
-        WHERE decision_id = ? AND submitted_at > ?
-        ORDER BY submitted_at LIMIT 1`,
-    );
-    const projectActivity = this.db.prepare(
-      `SELECT v.decision_id, v.num, v.submitted_at, d.title
-         FROM versions v
-         JOIN decisions d ON d.id = v.decision_id
-         JOIN projects  p ON p.id = d.project_id
-        WHERE p.name = ? AND v.submitted_at > ? AND v.submitted_at <= ?
-        ORDER BY v.submitted_at LIMIT 1`,
+    // Earliest reply wins: if an agent answered twice, the first is the answer
+    // and the rest are afterthoughts.
+    const firstReply = this.db.prepare(
+      `SELECT id, body, refs, author, created_at FROM messages
+        WHERE in_reply_to = ?
+        ORDER BY created_at, rowid LIMIT 1`,
     );
 
     return rows.map((r) => {
-      const context = r.context ? (JSON.parse(r.context) as Record<string, string>) : null;
-      const base = {
+      const reply = firstReply.get(r.id) as
+        | { id: string; body: string; refs: string | null; author: string; created_at: number }
+        | undefined;
+      return {
         id: r.id,
         body: r.body,
-        context,
+        context: r.context ? (JSON.parse(r.context) as Record<string, string>) : null,
         createdAt: r.created_at,
         deliveredAt: r.delivered_at,
+        reply: reply
+          ? {
+              id: reply.id,
+              body: reply.body,
+              refs: reply.refs ? (JSON.parse(reply.refs) as string[]) : [],
+              author: reply.author,
+              createdAt: reply.created_at,
+            }
+          : null,
       };
-      const decisionId = context?.decisionId;
-      if (!decisionId) {
-        // Most messages are typed from a project page, so a decision-only
-        // correlation would report "not tracked" on nearly every row and the
-        // history would be useless. A project is still a real handle: report the
-        // next document the agent submitted there, explicitly as *activity*
-        // rather than a reply, since only time links it to what you said.
-        const project = context?.project;
-        if (!project) return { ...base, reaction: { kind: 'untracked' } as MessageReaction };
-        const a = projectActivity.get(
-          project,
-          r.created_at,
-          r.created_at + Repository.ACTIVITY_WINDOW_MS,
-        ) as { decision_id: string; title: string; num: number; submitted_at: number } | undefined;
-        return {
-          ...base,
-          reaction: a
-            ? {
-                kind: 'activity',
-                at: a.submitted_at,
-                decisionId: a.decision_id,
-                title: a.title,
-                num: a.num,
-              }
-            : { kind: 'none' },
-        };
-      }
-
-      const c = firstComment.get(decisionId, r.created_at) as
-        | { id: string; body: string; created_at: number }
-        | undefined;
-      const v = firstVersion.get(decisionId, r.created_at) as
-        | { id: string; num: number; submitted_at: number }
-        | undefined;
-
-      // A revision answers feedback more concretely than a reply does, so when
-      // both exist the earlier one wins — whichever the agent reached for first.
-      if (v && (!c || v.submitted_at <= c.created_at)) {
-        return {
-          ...base,
-          reaction: { kind: 'version', at: v.submitted_at, decisionId, ref: v.id, num: v.num },
-        };
-      }
-      if (c) {
-        return {
-          ...base,
-          reaction: {
-            kind: 'comment',
-            at: c.created_at,
-            decisionId,
-            ref: c.id,
-            excerpt: c.body.slice(0, 140),
-          },
-        };
-      }
-      return { ...base, reaction: { kind: 'none' } as MessageReaction };
     });
+  }
+
+  replyToMessage(
+    messageId: string,
+    body: string,
+    opts: { refs?: string[]; agent?: string },
+  ): MessageReply {
+    const target = this.db.prepare('SELECT id FROM messages WHERE id = ?').get(messageId) as
+      | { id: string }
+      | undefined;
+    // A reply addressed to nothing is not a reply. Fail loudly rather than
+    // storing an orphan the UI would never show.
+    if (!target) throw new Error(`no such message: ${messageId}`);
+
+    const reply: MessageReply = {
+      id: newId('msg'),
+      body,
+      refs: opts.refs ?? [],
+      author: opts.agent ?? 'agent',
+      createdAt: now(),
+    };
+    this.db
+      .prepare(
+        `INSERT INTO messages (id, body, context, created_at, delivered_at, author, in_reply_to, refs)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        reply.id,
+        reply.body,
+        reply.createdAt,
+        // A reply is written by an agent that is already awake — there is
+        // nothing to deliver it to and no presence to wait on.
+        reply.createdAt,
+        reply.author,
+        messageId,
+        reply.refs.length ? JSON.stringify(reply.refs) : null,
+      );
+    return reply;
   }
 
   // ---------- search & constraints ----------

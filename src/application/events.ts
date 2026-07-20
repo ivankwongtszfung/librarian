@@ -18,6 +18,9 @@ export interface LibrarianEvent {
   body?: string;
   /** 'message' events: where the human was when they said it. */
   context?: Record<string, string>;
+  /** 'message' events: the durable row ids being delivered, so an agent can
+   *  answer them by id (ADR-019). A batched turn carries one per message. */
+  messageIds?: string[];
   at: number;
 }
 

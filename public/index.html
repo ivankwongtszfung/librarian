@@ -198,7 +198,18 @@
 
   /* history: what you sent, and whether anything came back */
   .hist { max-width: 62rem; margin: 0 auto; padding: 0.6rem 1.25rem 0; max-height: 42vh; overflow-y: auto; }
-  .hist .m { border-top: 1px solid var(--line); padding: 0.55rem 0; display: flex; gap: 0.7rem; align-items: baseline; }
+  .hist .m { border-top: 1px solid var(--line); padding: 0.55rem 0; }
+  .hist .line { display: flex; gap: 0.7rem; align-items: baseline; }
+  /* The agent's answer sits under what it answers, indented past the status tag —
+     the exchange reads as one thing, not two lists side by side. */
+  .hist .rep { margin: 0.45rem 0 0.2rem 2.1rem; padding: 0.5rem 0.75rem;
+               border-left: 2px solid var(--green); background: var(--green-soft);
+               border-radius: 0 7px 7px 0; font-size: 0.86rem; }
+  .hist .rep .who { font-family: var(--mono); font-size: 0.65rem; color: var(--green-ink);
+                    margin-bottom: 0.2rem; }
+  .hist .rep .refs { margin-top: 0.4rem; display: flex; gap: 0.35rem; flex-wrap: wrap; }
+  .hist .rep .refs code { font-family: var(--mono); font-size: 0.68rem; background: var(--surface);
+                          border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.35rem; }
   .hist .m:first-child { border-top: 0; }
   .hist .said { flex: 1; min-width: 0; font-size: 0.85rem; }
   .hist .said .where { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); display: block; margin-top: 0.15rem; }
@@ -770,32 +781,24 @@ chatIn.addEventListener('input', () => {
 const histBox = document.getElementById('chat-hist');
 const histBtn = document.getElementById('chat-hist-btn');
 
-function reactionCell(m) {
-  const r = m.reaction ?? { kind: 'untracked' };
-  if (r.kind === 'version') {
-    return `<span class="re">↳ revised to <a href="/d/${r.decisionId}" onclick="event.preventDefault(); route('/d/${r.decisionId}')">v${r.num}</a></span>`;
-  }
-  if (r.kind === 'comment') {
-    return `<span class="re" title="${esc(r.excerpt)}">↳ agent replied: ${esc(r.excerpt.slice(0, 60))}${r.excerpt.length > 60 ? '…' : ''}</span>`;
-  }
-  if (r.kind === 'activity') {
-    // Deliberately not "replied": only time links this to what you said.
-    return `<span class="re" title="Correlated by time only — this message named a project, not a decision.">↳ then submitted <a href="/d/${r.decisionId}" onclick="event.preventDefault(); route('/d/${r.decisionId}')">${esc(r.title.slice(0, 34))}${r.title.length > 34 ? '…' : ''}</a> v${r.num}</span>`;
-  }
-  if (r.kind === 'none') {
-    return `<span class="re">${m.deliveredAt ? 'nothing since' : ''}</span>`;
-  }
-  return '<span class="re" title="This message named neither a decision nor a project, so there is nothing to correlate against.">not tracked</span>';
+// The agent's answer, stored (ADR-019). This replaced a correlation that
+// guessed from timing whether an answer had happened — there are only two
+// honest states now, and neither is inferred.
+function replyBlock(m) {
+  if (!m.reply) return '';
+  const refs = (m.reply.refs ?? [])
+    .map((r) => `<code>${esc(r)}</code>`)
+    .join(' ');
+  return `<div class="rep">
+    <div class="who">${esc(m.reply.author)} · ${when(m.reply.createdAt)}</div>
+    <div class="c-body">${md(m.reply.body)}</div>
+    ${refs ? `<div class="refs">${refs}</div>` : ''}
+  </div>`;
 }
 
 function statusTag(m) {
   if (!m.deliveredAt) return '<span class="tag warn">⏳ parked</span>';
-  // "answered" is only claimed where the link is real. Time-correlated activity
-  // stays at "delivered" — the row still shows what happened, without asserting
-  // the agent was responding to you.
-  if (m.reaction?.kind === 'version' || m.reaction?.kind === 'comment') {
-    return '<span class="tag ok">✓ answered</span>';
-  }
+  if (m.reply) return '<span class="tag ok">✓ answered</span>';
   return '<span class="tag">✓ delivered</span>';
 }
 
@@ -814,10 +817,12 @@ function historyRow(m) {
   const quoted = m.context?.quote ? ' · pointed at a passage' : '';
   const shot = m.context?.attachment ? ' · screenshot' : '';
   return `<div class="m">
-    ${statusTag(m)}
-    <span class="said">${esc(m.body.slice(0, 180))}${m.body.length > 180 ? '…' : ''}
-      <span class="where">${when(m.createdAt)}${where ? ' · ' + where : ''}${quoted}${shot}</span></span>
-    ${reactionCell(m)}
+    <div class="line">
+      ${statusTag(m)}
+      <span class="said">${esc(m.body.slice(0, 400))}${m.body.length > 400 ? '…' : ''}
+        <span class="where">${when(m.createdAt)}${where ? ' · ' + where : ''}${quoted}${shot}</span></span>
+    </div>
+    ${replyBlock(m)}
   </div>`;
 }
 

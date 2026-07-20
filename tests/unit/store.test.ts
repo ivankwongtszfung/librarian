@@ -509,48 +509,36 @@ describe('message history', () => {
   });
   const later = () => vi.advanceTimersByTime(1000);
 
-  const doc = () =>
-    r.submit({ project: 'p', title: 'T', body: 'b', kind: 'adr', source: 'mcp' }).decision;
-
-  it('reports a message that named no decision as untracked, never as unanswered', () => {
-    r.addMessage('the sidebar looks wrong', { page: '/p/librarian' });
-    // "we cannot tell" and "the agent ignored you" are different claims.
-    expect(r.messageHistory()[0].reaction.kind).toBe('untracked');
-  });
-
-  it('reports no reaction when the agent has not answered yet', () => {
-    r.addMessage('please tighten section 2', { decisionId: doc().id });
-    expect(r.messageHistory()[0].reaction.kind).toBe('none');
-  });
-
-  it('sees an agent comment made after the message', () => {
-    const d = doc();
-    r.addMessage('why this approach?', { decisionId: d.id });
+  it('stores an agent reply against the message it answers', () => {
+    const m = r.addMessage('why does the history button do nothing?', { page: '/p/x' });
     later();
-    r.addComments(d.id, r.upsertParticipant('agent', 'claude-code'), [
-      { body: 'Because the alternative loses verdicts.' },
-    ]);
-    const reaction = r.messageHistory()[0].reaction;
-    expect(reaction.kind).toBe('comment');
-    if (reaction.kind === 'comment') expect(reaction.excerpt).toContain('loses verdicts');
+    r.replyToMessage(m.id, 'It had no type attribute, so it submitted. Fixed.', {
+      refs: ['e416de2'],
+      agent: 'claude-code',
+    });
+    const [item] = r.messageHistory();
+    expect(item.reply?.body).toContain('type attribute');
+    expect(item.reply?.refs).toEqual(['e416de2']);
+    expect(item.reply?.author).toBe('claude-code');
   });
 
-  it('ignores a human comment — only the agent counts as a reaction', () => {
-    const d = doc();
-    r.addMessage('question', { decisionId: d.id });
-    later();
-    r.addComments(d.id, r.upsertParticipant('human', 'ivan'), [{ body: 'my own note' }]);
-    expect(r.messageHistory()[0].reaction.kind).toBe('none');
+  it('reports no reply when none was written — never a guess', () => {
+    r.addMessage('a question nobody answered', { page: '/p/x' });
+    expect(r.messageHistory()[0].reply).toBeNull();
   });
 
-  it('does not credit a comment that predates the message', () => {
-    const d = doc();
-    r.addComments(d.id, r.upsertParticipant('agent', 'claude-code'), [
-      { body: 'said this before you asked' },
-    ]);
+  it('a reply is not itself listed as a message awaiting one', () => {
+    const m = r.addMessage('first', null);
     later();
-    r.addMessage('now a question', { decisionId: d.id });
-    expect(r.messageHistory()[0].reaction.kind).toBe('none');
+    r.replyToMessage(m.id, 'answered', {});
+    const all = r.messageHistory();
+    // The reply belongs under its message, not beside it as a new entry.
+    expect(all).toHaveLength(1);
+    expect(all[0].body).toBe('first');
+  });
+
+  it('refuses a reply to a message that does not exist', () => {
+    expect(() => r.replyToMessage('msg_nope', 'hello', {})).toThrow();
   });
 
   it('newest message comes first', () => {

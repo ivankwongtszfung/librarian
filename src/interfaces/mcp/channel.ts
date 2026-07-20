@@ -26,6 +26,9 @@ const INSTRUCTIONS = [
   'Such a message may carry a highlighted passage, a section name, and a',
   'screenshot path — read the passage as the thing being pointed at, and open a',
   'screenshot path with the Read tool before replying.',
+  'Every such message carries a message_id. When you have answered it or acted on',
+  'it, call reply_to_message with that id — the human reads the page, and an',
+  'answer that stays in your terminal reads to them as no answer at all.',
   'When chat-bar feedback on a decision asks for a change to the document, do not',
   'just reply: revise it and call submit_for_review with parent_review_id set to',
   'that decision id, so the correction lands as a NEW VERSION. Reply with',
@@ -73,6 +76,7 @@ export function verdictToChannel(
 export function messageToChannel(ev: {
   body?: string;
   context?: Record<string, string>;
+  messageIds?: string[];
 }): ChannelMessage {
   const ctx = ev.context ?? {};
   if (ctx.batch) {
@@ -112,7 +116,19 @@ export function messageToChannel(ev: {
     ? `\n\nIf this asks for a change to the document, revise it and call submit_for_review with parent_review_id="${ctx.decisionId}" so it lands as a new version (a reply alone leaves the doc stale). If it is only a question, answer with comment_on_decision.`
     : '';
 
-  const content = `Message from the human, typed into the review UI${where ? ` (${where})` : ''}:\n\n${ev.body ?? ''}${pointing ? `\n\n${pointing}` : ''}${revise}`;
+  // The human reads the page, not your terminal. An answer that never gets
+  // written back leaves the message showing as unanswered — which is exactly
+  // what they see today when work happens in code (ADR-019).
+  const ids = ev.messageIds ?? [];
+  const answer = ids.length
+    ? `\n\nWhen you have answered or acted on this, call reply_to_message(message_id="${ids[0]}") with the conclusion and refs (commits, PRs) so it appears on the page.${
+        ids.length > 1
+          ? ` This turn carries ${ids.length} separate messages — each line is tagged with its own id, and each one you act on needs its own reply.`
+          : ''
+      }`
+    : '';
+
+  const content = `Message from the human, typed into the review UI${where ? ` (${where})` : ''}:\n\n${ev.body ?? ''}${pointing ? `\n\n${pointing}` : ''}${revise}${answer}`;
 
   return {
     content,
@@ -122,6 +138,7 @@ export function messageToChannel(ev: {
       ...(ctx.decisionId ? { decision_id: ctx.decisionId } : {}),
       ...(ctx.section ? { section: ctx.section } : {}),
       ...(ctx.attachment ? { attachment: ctx.attachment } : {}),
+      ...(ids.length ? { message_id: ids.join(',') } : {}),
     },
   };
 }

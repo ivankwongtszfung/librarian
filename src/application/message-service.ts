@@ -99,16 +99,21 @@ export class MessageService {
         projectName,
         body: m.body,
         context: m.context ?? undefined,
+        // The row id travels with the turn so the agent can answer it (ADR-019).
+        messageIds: [m.id],
         at: this.clock(),
       });
       return;
     }
     // One turn, everything in order, each entry labeled with where the human
     // was standing when they said it.
+    // Each line is labelled with its own id: a batch is N separate things the
+    // human said, and answering "the batch" would leave the rest showing as
+    // unanswered forever.
     const lines = msgs.map((m, i) => {
       const where = m.context?.page ? ` · ${m.context.page}` : '';
       const title = m.context?.title ? ` · "${m.context.title}"` : '';
-      return `[${i + 1}/${msgs.length}${where}${title}] ${m.body}`;
+      return `[${i + 1}/${msgs.length}${where}${title} · id=${m.id}] ${m.body}`;
     });
     this.bus.emitEvent({
       type: 'message',
@@ -116,6 +121,7 @@ export class MessageService {
       projectName,
       body: lines.join('\n\n'),
       context: { batch: String(msgs.length), ...(projectName ? { project: projectName } : {}) },
+      messageIds: msgs.map((m) => m.id),
       at: this.clock(),
     });
   }
