@@ -23,6 +23,11 @@ export class LibrarianWorld extends World {
   dbPath = '';
   watchDir?: string;
 
+  /** Real SSE listeners, one per simulated agent session, keyed by a label.
+   *  Routing can only be tested from outside the daemon: what a given
+   *  connection actually receives is the entire question. */
+  channels = new Map<string, { events: LibrarianEvent[]; abort: AbortController }>();
+
   reviewId?: string;
   lastToolResult?: Record<string, unknown>;
   lastHttpStatus?: number;
@@ -137,6 +142,70 @@ export class LibrarianWorld extends World {
     throw lastErr;
   }
 
+  /**
+   * Connect a channel session exactly as `cli.js channel` does — declaring its
+   * project and session key in headers — and record everything the daemon
+   * pushes down it.
+   */
+  async listenAs(label: string, project: string): Promise<void> {
+    const abort = new AbortController();
+    const events: LibrarianEvent[] = [];
+    this.channels.set(label, { events, abort });
+
+    const res = await fetch(`${this.baseUrl}/api/events`, {
+      headers: {
+        accept: 'text/event-stream',
+        'x-librarian-session': `ses_bdd_${label}`,
+        'x-librarian-project': project,
+        'x-librarian-cwd': `/tmp/${label}`,
+      },
+      signal: abort.signal,
+    });
+    if (!res.body) throw new Error('no event stream');
+
+    // Drain in the background; scenarios assert on what has arrived so far.
+    void (async () => {
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split('\n\n');
+          buf = parts.pop() ?? '';
+          for (const part of parts) {
+            const line = part.split('\n').find((l) => l.startsWith('data: '));
+            if (!line) continue;
+            try {
+              events.push(JSON.parse(line.slice(6)) as LibrarianEvent);
+            } catch {
+              /* heartbeat or partial frame */
+            }
+          }
+        }
+      } catch {
+        /* aborted at teardown */
+      }
+    })();
+
+    // The registration is what routing consults, so don't proceed until the
+    // daemon has actually seen this connection.
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const { body } = await this.api('GET', '/api/sessions');
+      const sessions = (body.sessions ?? []) as Array<{ key: string }>;
+      if (sessions.some((s) => s.key === `ses_bdd_${label}`)) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error(`channel ${label} never registered`);
+  }
+
+  received(label: string, type: string): LibrarianEvent[] {
+    return (this.channels.get(label)?.events ?? []).filter((e) => e.type === type);
+  }
+
   get baseUrl(): string {
     if (!this.daemon) throw new Error('daemon not started');
     return this.daemon.baseUrl;
@@ -179,6 +248,8 @@ export class LibrarianWorld extends World {
   }
 
   async destroy(): Promise<void> {
+    for (const { abort } of this.channels.values()) abort.abort();
+    this.channels.clear();
     if (this.waiter && this.waiter.exitCode === null) {
       this.waiter.kill('SIGKILL');
       await this.waiterExit;

@@ -1,4 +1,9 @@
-import type { DecisionStore, QueuedMessage } from '../../domain/ports.js';
+import type {
+  DecisionStore,
+  MessageHistoryItem,
+  MessageReaction,
+  QueuedMessage,
+} from '../../domain/ports.js';
 import { assertTransition } from '../../domain/state-machine.js';
 import type {
   Catchup,
@@ -704,6 +709,132 @@ export class Repository implements DecisionStore {
       for (const id of ids) stamp.run(now(), id);
     });
     tx();
+  }
+
+  /**
+   * How long after a message a project-level submission still counts as
+   * plausibly related. Without a bound, every message eventually points at
+   * whatever was submitted next — hours later and about something else
+   * entirely — which reads as a connection that is not there. Two hours is a
+   * working session; past that, "nothing since" is the more honest answer.
+   */
+  private static readonly ACTIVITY_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+  /**
+   * The chat-bar history: what you said, and what came back.
+   *
+   * Delivery is a fact — `delivered_at` is stamped when the daemon hands the row
+   * to a session. A *reaction* is an inference, so it is reported as one. Only a
+   * message that named a decision can be correlated at all; anything typed from
+   * a library or project page is `untracked`, never `none`, because "we cannot
+   * tell" and "the agent ignored you" are different claims and the UI must not
+   * merge them.
+   *
+   * The correlation is deliberately crude: the first agent comment or new
+   * version on that decision after the message was sent. It can attribute work
+   * the agent was already doing. It is a pointer to look at, not proof of cause.
+   */
+  messageHistory(limit = 50, offset = 0): MessageHistoryItem[] {
+    const rows = this.db
+      // rowid breaks the tie: two messages sent inside the same millisecond are
+      // common (paste, hit enter, paste again) and created_at alone leaves their
+      // order undefined — the same trap catchups already hit. It also makes
+      // OFFSET paging stable, which an ambiguous sort would not be.
+      .prepare('SELECT * FROM messages ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as Array<{
+      id: string;
+      body: string;
+      context: string | null;
+      created_at: number;
+      delivered_at: number | null;
+    }>;
+
+    const firstComment = this.db.prepare(
+      `SELECT c.id, c.body, c.created_at
+         FROM comments c JOIN participants p ON p.id = c.participant_id
+        WHERE c.decision_id = ? AND p.type = 'agent' AND c.created_at > ?
+        ORDER BY c.created_at LIMIT 1`,
+    );
+    const firstVersion = this.db.prepare(
+      `SELECT id, num, submitted_at FROM versions
+        WHERE decision_id = ? AND submitted_at > ?
+        ORDER BY submitted_at LIMIT 1`,
+    );
+    const projectActivity = this.db.prepare(
+      `SELECT v.decision_id, v.num, v.submitted_at, d.title
+         FROM versions v
+         JOIN decisions d ON d.id = v.decision_id
+         JOIN projects  p ON p.id = d.project_id
+        WHERE p.name = ? AND v.submitted_at > ? AND v.submitted_at <= ?
+        ORDER BY v.submitted_at LIMIT 1`,
+    );
+
+    return rows.map((r) => {
+      const context = r.context ? (JSON.parse(r.context) as Record<string, string>) : null;
+      const base = {
+        id: r.id,
+        body: r.body,
+        context,
+        createdAt: r.created_at,
+        deliveredAt: r.delivered_at,
+      };
+      const decisionId = context?.decisionId;
+      if (!decisionId) {
+        // Most messages are typed from a project page, so a decision-only
+        // correlation would report "not tracked" on nearly every row and the
+        // history would be useless. A project is still a real handle: report the
+        // next document the agent submitted there, explicitly as *activity*
+        // rather than a reply, since only time links it to what you said.
+        const project = context?.project;
+        if (!project) return { ...base, reaction: { kind: 'untracked' } as MessageReaction };
+        const a = projectActivity.get(
+          project,
+          r.created_at,
+          r.created_at + Repository.ACTIVITY_WINDOW_MS,
+        ) as { decision_id: string; title: string; num: number; submitted_at: number } | undefined;
+        return {
+          ...base,
+          reaction: a
+            ? {
+                kind: 'activity',
+                at: a.submitted_at,
+                decisionId: a.decision_id,
+                title: a.title,
+                num: a.num,
+              }
+            : { kind: 'none' },
+        };
+      }
+
+      const c = firstComment.get(decisionId, r.created_at) as
+        | { id: string; body: string; created_at: number }
+        | undefined;
+      const v = firstVersion.get(decisionId, r.created_at) as
+        | { id: string; num: number; submitted_at: number }
+        | undefined;
+
+      // A revision answers feedback more concretely than a reply does, so when
+      // both exist the earlier one wins — whichever the agent reached for first.
+      if (v && (!c || v.submitted_at <= c.created_at)) {
+        return {
+          ...base,
+          reaction: { kind: 'version', at: v.submitted_at, decisionId, ref: v.id, num: v.num },
+        };
+      }
+      if (c) {
+        return {
+          ...base,
+          reaction: {
+            kind: 'comment',
+            at: c.created_at,
+            decisionId,
+            ref: c.id,
+            excerpt: c.body.slice(0, 140),
+          },
+        };
+      }
+      return { ...base, reaction: { kind: 'none' } as MessageReaction };
+    });
   }
 
   // ---------- search & constraints ----------

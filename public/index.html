@@ -136,6 +136,34 @@
   .comment .who { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-bottom: 0.25rem; }
   .comment blockquote { margin: 0 0 0.4rem; padding-left: 0.7rem; border-left: 2px solid var(--green);
                         color: var(--muted); font-size: 0.86rem; }
+  /* Comment bodies run through the same markdown renderer as a decision doc,
+     scaled down: a comment is a remark, so its headings must not out-shout the
+     document it is attached to. */
+  .c-body > *:first-child { margin-top: 0; }
+  .c-body > *:last-child { margin-bottom: 0; }
+  .c-body h1, .c-body h2, .c-body h3 {
+    font-family: var(--sans); font-size: 0.95rem; margin: 0.9rem 0 0.35rem; line-height: 1.3;
+  }
+  .c-body p { margin: 0.5rem 0; }
+  .c-body ul, .c-body ol { padding-left: 1.2rem; margin: 0.5rem 0; }
+  .c-body li { margin: 0.15rem 0; }
+  .c-body code { font-family: var(--mono); font-size: 0.85em; background: var(--code-bg);
+                 padding: 0.1em 0.3em; border-radius: 4px; }
+  .c-body pre { background: var(--code-bg); padding: 0.7rem; border-radius: 6px;
+                overflow-x: auto; font-size: 0.8rem; }
+  .c-body pre code { background: none; padding: 0; }
+  .c-body a { color: var(--green-ink); }
+  .c-body hr { border: 0; border-top: 1px solid var(--line); margin: 0.8rem 0; }
+  .c-body .tbl { overflow-x: auto; margin: 0.6rem 0; }
+  .c-body table { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+  .c-body th, .c-body td { border: 1px solid var(--line); padding: 0.3rem 0.5rem;
+                           text-align: left; vertical-align: top; }
+  .c-body th { font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.04em;
+               text-transform: uppercase; color: var(--muted); background: var(--code-bg); }
+  /* The anchor quote is the doc speaking; a quote the comment itself writes is
+     the commenter speaking. Keep them visually distinct. */
+  .c-body blockquote { margin: 0.5rem 0; padding: 0.1rem 0 0.1rem 0.8rem;
+                       border-left: 2px solid var(--line); color: var(--muted); font-size: 0.9em; }
   .versions { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
   .versions button { font-family: var(--mono); font-size: 0.75rem; padding: 0.25rem 0.6rem;
                      border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
@@ -164,8 +192,42 @@
   .chat { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); }
   .chat .row { max-width: 62rem; margin: 0 auto; padding: 0.75rem 1.25rem; display: flex; gap: 0.55rem; align-items: center; }
   .chat input { flex: 1; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.75rem; }
-  .chat select { max-width: 12rem; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.35rem; }
   .chat button { font-family: var(--sans); font-weight: 600; font-size: 0.85rem; background: var(--green); color: #fff; border: 1px solid var(--green); border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; }
+  .chat button.ghost { font-family: var(--mono); font-weight: 400; font-size: 0.7rem; background: var(--bg); color: var(--muted); border-color: var(--line); padding: 0.55rem 0.7rem; }
+  .chat button.ghost.on { background: var(--green-soft); color: var(--green-ink); border-color: var(--green); }
+
+  /* history: what you sent, and whether anything came back */
+  .hist { max-width: 62rem; margin: 0 auto; padding: 0.6rem 1.25rem 0; max-height: 42vh; overflow-y: auto; }
+  .hist .m { border-top: 1px solid var(--line); padding: 0.55rem 0; display: flex; gap: 0.7rem; align-items: baseline; }
+  .hist .m:first-child { border-top: 0; }
+  .hist .said { flex: 1; min-width: 0; font-size: 0.85rem; }
+  .hist .said .where { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); display: block; margin-top: 0.15rem; }
+  .hist .re { font-size: 0.8rem; color: var(--muted); max-width: 20rem; }
+  .hist .re a { color: var(--green-ink); }
+  .hist .tag { font-family: var(--mono); font-size: 0.63rem; letter-spacing: 0.03em; border-radius: 999px;
+               padding: 0.15rem 0.5rem; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); }
+  .hist .tag.ok { background: var(--green-soft); color: var(--green-ink); border-color: var(--green); }
+  .hist .tag.warn { background: var(--amber-soft); color: var(--amber); border-color: var(--amber); }
+  .hist .empty { color: var(--muted); font-size: 0.82rem; padding: 0.4rem 0; }
+
+  /* review mode: comments held back, then submitted together */
+  .rev { max-width: 62rem; margin: 0 auto; padding: 0.6rem 1.25rem 0; max-height: 42vh; overflow-y: auto; }
+  .rev .hd { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.05em;
+             text-transform: uppercase; color: var(--muted); padding-bottom: 0.35rem; }
+  .rev .d { border-top: 1px solid var(--line); padding: 0.5rem 0; display: flex; gap: 0.6rem; align-items: baseline; }
+  .rev .n { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+  .rev .txt { flex: 1; min-width: 0; font-size: 0.86rem; }
+  .rev .txt blockquote { margin: 0.2rem 0 0; padding-left: 0.6rem; border-left: 2px solid var(--green);
+                         color: var(--muted); font-size: 0.78rem; }
+  .rev .rm { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; padding: 0 0.2rem; }
+  .rev .rm:hover { color: var(--red); }
+  .rev .go { display: flex; gap: 0.4rem; flex-wrap: wrap; padding: 0.6rem 0 0.2rem; border-top: 1px solid var(--line); }
+  .rev .go button { font-family: var(--sans); font-size: 0.78rem; font-weight: 600;
+                    border-radius: 7px; padding: 0.4rem 0.75rem; cursor: pointer; border: 1px solid; }
+  .rev .go .just { background: var(--surface); border-color: var(--line); color: var(--ink); }
+  .rev .go .chg { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); }
+  .rev .go .app { background: var(--green); border-color: var(--green); color: #fff; }
+  .rev .empty { color: var(--muted); font-size: 0.82rem; padding: 0.4rem 0; }
   .chat .st { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 6rem; text-align: right; }
   .chat .st.ok { color: var(--green-ink); }
   .chat .st.warn { color: var(--amber); }
@@ -225,8 +287,11 @@
 <main id="app"><p class="empty">Loading…</p></main>
 <div class="chat">
   <div class="chips" id="chat-chips" hidden></div>
+  <div class="hist" id="chat-hist" hidden></div>
+  <div class="rev" id="chat-rev" hidden></div>
   <div class="row">
-  <select id="chat-ctx" title="What this message is about"><option value="">about: this page</option></select>
+  <button id="chat-hist-btn" type="button" class="ghost" title="What you've sent, and what came back">history</button>
+  <button id="chat-rev-btn" type="button" class="ghost" title="Collect comments, then submit them as one review">review</button>
   <input id="chat-in" type="text" placeholder="Select text in the doc, or paste a screenshot — then tell the agent…">
   <button id="chat-send">Send</button>
   <span class="st" id="chat-st"></span>
@@ -338,6 +403,19 @@ async function renderDiagrams() {
 
 function statusChip(s) { return `<span class="chip ${s}">${s.replace('_', ' ')}</span>`; }
 const when = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+// A 401 means the cookie is missing or stale. Wrapping fetch rather than the
+// api() helper catches the raw fetches too (attachment upload, and every call in
+// catchup.html), so no request can fail silently into an empty-looking page.
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await _fetch(...args);
+  if (res.status === 401 && !location.pathname.startsWith('/login')) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    location.replace(`/login.html?next=${next}`);
+  }
+  return res;
+};
 
 async function api(path, opts) {
   const res = await fetch(`/api${path}`, {
@@ -567,7 +645,7 @@ function renderThread(d) {
       <div class="comment">
         <div class="who">${esc(c.author)} · ${when(c.createdAt)}</div>
         ${c.anchorQuote ? `<blockquote>${esc(c.anchorQuote)}</blockquote>` : ''}
-        <div>${esc(c.body).replace(/\n/g, '<br>')}</div>
+        <div class="c-body">${md(c.body)}</div>
       </div>`).join('')}`)
     .join('')}</div>`;
 }
@@ -630,6 +708,10 @@ window.route = (path) => {
 };
 
 function render() {
+  // A held review belongs to the doc it was written about. Leaving that doc
+  // closes review mode — the drafts stay in storage, so opening the doc again
+  // picks them back up rather than losing them.
+  if (typeof syncReviewToPage === 'function') syncReviewToPage();
   const d = /^\/d\/(.+)$/.exec(location.pathname);
   if (d) { renderDecision(d[1]); return; }
   const p = /^\/p\/([^/]+)$/.exec(location.pathname);
@@ -672,7 +754,7 @@ new EventSource('/api/events').addEventListener('message', (e) => {
 // picker retargets it to any open review without navigating there.
 const chatIn = document.getElementById('chat-in');
 const chatSt = document.getElementById('chat-st');
-const chatCtx = document.getElementById('chat-ctx');
+const chatSend = document.getElementById('chat-send');
 
 // The draft belongs to the human, not the page lifecycle: it survives
 // reloads, daemon restarts, and browser restarts until it is sent.
@@ -681,15 +763,122 @@ try { chatIn.value = localStorage.getItem(DRAFT_KEY) ?? ''; } catch { /* private
 chatIn.addEventListener('input', () => {
   try { localStorage.setItem(DRAFT_KEY, chatIn.value); } catch { /* best effort */ }
 });
-async function loadCtxPicker() {
-  const { body } = await api('/decisions');
-  const open = (body.decisions ?? []).filter((d) => d.status === 'pending' || d.status === 'changes_requested');
-  const keep = chatCtx.value;
-  chatCtx.innerHTML = '<option value="">about: this page</option>' + open
-    .map((d) => `<option value="${d.id}" data-title="${esc(d.title)}">about: ${esc(d.title.slice(0, 44))}…</option>`)
-    .join('');
-  if ([...chatCtx.options].some((o) => o.value === keep)) chatCtx.value = keep;
+// ---- history: what you said, and whether anything came back ----
+// Delivery is a fact the daemon stamped. A reaction is a correlation, so the
+// wording stays weaker than the wording for delivery — and "we cannot tell"
+// (no decision was named) never renders as "no reply".
+const histBox = document.getElementById('chat-hist');
+const histBtn = document.getElementById('chat-hist-btn');
+
+function reactionCell(m) {
+  const r = m.reaction ?? { kind: 'untracked' };
+  if (r.kind === 'version') {
+    return `<span class="re">↳ revised to <a href="/d/${r.decisionId}" onclick="event.preventDefault(); route('/d/${r.decisionId}')">v${r.num}</a></span>`;
+  }
+  if (r.kind === 'comment') {
+    return `<span class="re" title="${esc(r.excerpt)}">↳ agent replied: ${esc(r.excerpt.slice(0, 60))}${r.excerpt.length > 60 ? '…' : ''}</span>`;
+  }
+  if (r.kind === 'activity') {
+    // Deliberately not "replied": only time links this to what you said.
+    return `<span class="re" title="Correlated by time only — this message named a project, not a decision.">↳ then submitted <a href="/d/${r.decisionId}" onclick="event.preventDefault(); route('/d/${r.decisionId}')">${esc(r.title.slice(0, 34))}${r.title.length > 34 ? '…' : ''}</a> v${r.num}</span>`;
+  }
+  if (r.kind === 'none') {
+    return `<span class="re">${m.deliveredAt ? 'nothing since' : ''}</span>`;
+  }
+  return '<span class="re" title="This message named neither a decision nor a project, so there is nothing to correlate against.">not tracked</span>';
 }
+
+function statusTag(m) {
+  if (!m.deliveredAt) return '<span class="tag warn">⏳ parked</span>';
+  // "answered" is only claimed where the link is real. Time-correlated activity
+  // stays at "delivered" — the row still shows what happened, without asserting
+  // the agent was responding to you.
+  if (m.reaction?.kind === 'version' || m.reaction?.kind === 'comment') {
+    return '<span class="tag ok">✓ answered</span>';
+  }
+  return '<span class="tag">✓ delivered</span>';
+}
+
+// Ten is what fits without the panel swallowing the page; the rest arrives as
+// you scroll. `loading` guards the burst of scroll events near the bottom from
+// firing the same fetch several times.
+const HIST_PAGE = 10;
+let histCount = 0;
+let histMore = true;
+let histLoading = false;
+
+function historyRow(m) {
+  const where = m.context?.title
+    ? `on “${esc(String(m.context.title).slice(0, 46))}”`
+    : m.context?.page ? `on ${esc(m.context.page)}` : '';
+  const quoted = m.context?.quote ? ' · pointed at a passage' : '';
+  const shot = m.context?.attachment ? ' · screenshot' : '';
+  return `<div class="m">
+    ${statusTag(m)}
+    <span class="said">${esc(m.body.slice(0, 180))}${m.body.length > 180 ? '…' : ''}
+      <span class="where">${when(m.createdAt)}${where ? ' · ' + where : ''}${quoted}${shot}</span></span>
+    ${reactionCell(m)}
+  </div>`;
+}
+
+// `reset` reloads everything already on screen — used when the panel opens and
+// when an event lands — so a live update cannot leave the list half-stale.
+async function loadHistory({ reset = false } = {}) {
+  if (histLoading) return;
+  if (!reset && !histMore) return;
+  histLoading = true;
+  const offset = reset ? 0 : histCount;
+  const limit = reset ? Math.max(histCount, HIST_PAGE) : HIST_PAGE;
+  try {
+    const { status, body } = await api(`/messages/history?limit=${limit}&offset=${offset}`);
+    if (status !== 200) throw new Error(`daemon replied ${status}`);
+    const msgs = body.messages ?? [];
+    const html = msgs.map(historyRow).join('');
+    if (reset) {
+      histBox.innerHTML = html || '<div class="empty">Nothing sent yet.</div>';
+      histCount = msgs.length;
+    } else {
+      histBox.insertAdjacentHTML('beforeend', html);
+      histCount += msgs.length;
+    }
+    histMore = body.more ?? false;
+  } catch (err) {
+    // Never leave "Loading…" on screen: a stuck spinner reads as a hung daemon
+    // when the real answer is a failed request the human can just retry.
+    histMore = false;
+    const retry = '<button type="button" class="ghost" id="hist-retry">retry</button>';
+    const line = `<div class="empty">Could not load history — ${esc(String(err.message ?? err))}. ${retry}</div>`;
+    if (reset || !histCount) histBox.innerHTML = line;
+    else histBox.insertAdjacentHTML('beforeend', line);
+    histBox.querySelector('#hist-retry')?.addEventListener('click', () => {
+      histCount = 0;
+      histMore = true;
+      histBox.innerHTML = '<div class="empty">Loading…</div>';
+      loadHistory({ reset: true });
+    });
+  } finally {
+    histLoading = false;
+  }
+}
+
+// Load the next page as the bottom comes into view.
+histBox.addEventListener('scroll', () => {
+  const nearEnd = histBox.scrollTop + histBox.clientHeight >= histBox.scrollHeight - 40;
+  if (nearEnd) loadHistory();
+});
+
+histBtn.addEventListener('click', async (e) => {
+  e.preventDefault();
+  const opening = histBox.hidden;
+  histBox.hidden = !opening;
+  histBtn.classList.toggle('on', opening);
+  if (opening) {
+    histBox.innerHTML = '<div class="empty">Loading…</div>';
+    histCount = 0;
+    histMore = true;
+    await loadHistory({ reset: true });
+  }
+});
 // ---- precise context: point at a passage, or paste a screenshot ----
 // Both ride along with the next message so the agent knows exactly what the
 // human means. A selection also becomes the stored comment's anchor quote.
@@ -764,15 +953,253 @@ const chatBar = document.querySelector('.chat');
 chatBar.addEventListener('dragover', (e) => e.preventDefault());
 chatBar.addEventListener('drop', (e) => { e.preventDefault(); uploadShot(e.dataTransfer?.files?.[0]); });
 
-async function sendChat() {
+// ---- review mode: hold comments back, submit them as one review ----
+// Reviewing a doc a remark at a time wakes the agent on every remark, and it
+// starts answering point 1 while you are still forming point 4. Held together,
+// the agent sees the whole shape of the feedback once — which is the entire
+// reason a PR review batches instead of streaming.
+//
+// This needs no new endpoint: POST /api/decisions/:id/comments already accepts
+// an array, with request_changes and a reason.
+const revBox = document.getElementById('chat-rev');
+const revBtn = document.getElementById('chat-rev-btn');
+let reviewing = false;
+let staged = [];
+
+// Read from the URL, not pageCtx: pageCtx is assigned inside renderDecision, so
+// anything consulting it at the top of render() sees the page you just left.
+const reviewTarget = () => /^\/d\/(.+)$/.exec(location.pathname)?.[1] ?? null;
+// Buffering is useful anywhere, not only on a doc — holding three thoughts about
+// the library and sending them as one turn beats interrupting the agent three
+// times. Off a doc the drafts key on the page instead of a decision.
+const revKey = () => `librarian.review:${reviewTarget() ?? location.pathname}`;
+
+function saveStaged() {
+  // Drafts outlive the page: a review interrupted by a reload, a daemon
+  // restart, or a closed laptop is still the review you were writing.
+  try {
+    if (staged.length) localStorage.setItem(revKey(), JSON.stringify(staged));
+    else localStorage.removeItem(revKey());
+  } catch { /* private mode */ }
+}
+
+function loadStaged() {
+  staged = [];
+  try {
+    const raw = localStorage.getItem(revKey());
+    if (raw) staged = JSON.parse(raw);
+  } catch { staged = []; }
+}
+
+function renderReview() {
+  if (!staged.length) {
+    revBox.innerHTML = reviewTarget()
+      ? '<div class="empty">Review mode on — type a comment and press Enter to add it. Select a passage first to anchor it.</div>'
+      : '<div class="empty">Buffering on — type a note and press Enter to add it. They go to the agent together, as one turn.</div>';
+  } else {
+    const n = staged.length;
+    const onDoc = !!reviewTarget();
+    revBox.innerHTML =
+      `<div class="hd">${n} ${onDoc ? 'comment' : 'note'}${n > 1 ? 's' : ''} held — not sent yet</div>` +
+      staged.map((s, i) => `<div class="d">
+        <span class="n">${i + 1}</span>
+        <span class="txt">${esc(s.body)}
+          ${s.quote ? `<blockquote>${esc(s.quote.slice(0, 160))}${s.quote.length > 160 ? '…' : ''}</blockquote>` : ''}
+          ${s.shot ? '<blockquote>📎 screenshot attached</blockquote>' : ''}
+        </span>
+        <button type="button" class="rm" title="Drop this one" data-i="${i}">✕</button>
+      </div>`).join('') +
+      // Off a decision page there is nothing to cast a verdict on, so the only
+      // sensible action is the one that reduces back-and-forth: send the lot as
+      // a single agent turn.
+      (onDoc
+        ? `<div class="go">
+        <button type="button" class="just" data-go="comment">Submit ${n} comment${n > 1 ? 's' : ''}</button>
+        <button type="button" class="chg" data-go="changes">Submit — request changes</button>
+        <button type="button" class="app" data-go="approve">Submit — approve</button>
+      </div>`
+        : `<div class="go">
+        <button type="button" class="app" data-go="send">Send ${n} note${n > 1 ? 's' : ''} to the agent</button>
+      </div>`);
+  }
+  revBtn.textContent = staged.length ? `review (${staged.length})` : 'review';
+}
+
+revBox.addEventListener('click', (e) => {
+  const rm = e.target.closest('.rm');
+  if (rm) {
+    staged.splice(Number(rm.dataset.i), 1);
+    saveStaged();
+    renderReview();
+    return;
+  }
+  const go = e.target.closest('[data-go]');
+  if (go) submitReview(go.dataset.go);
+});
+
+function stageComment() {
   const body = chatIn.value.trim();
   if (!body) return;
-  chatSt.textContent = 'sending…'; chatSt.className = 'st';
-  const chosen = chatCtx.selectedOptions[0];
+  // Carry the screenshot too — dropping it here would silently discard the
+  // thing the note is about.
+  staged.push({
+    body,
+    quote: pickedQuote?.text ?? null,
+    section: pickedQuote?.section ?? null,
+    shot: pickedShot?.path ?? null,
+  });
+  chatIn.value = '';
+  pickedQuote = null; pickedShot = null; renderChips();
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* best effort */ }
+  saveStaged();
+  renderReview();
+  chatSt.textContent = `held (${staged.length})`;
+  chatSt.className = 'st';
+  setTimeout(() => { chatSt.textContent = ''; }, 2500);
+}
+
+// Off a decision page the held notes go out as ONE message rather than N. The
+// goal is a single agent turn; N rows would be N turns unless the presence
+// batcher happened to coalesce them, and "happened to" is not a guarantee.
+async function sendStagedAsMessage() {
+  const numbered = staged
+    .map((s, i) => {
+      const parts = [`${i + 1}. ${s.body}`];
+      if (s.quote) parts.push(`   > ${s.quote.slice(0, 400)}`);
+      if (s.shot) parts.push(`   screenshot: ${s.shot} — use the Read tool to view it`);
+      return parts.join('\n');
+    })
+    .join('\n\n');
+  const body = staged.length === 1 ? staged[0].body : `${staged.length} notes:\n\n${numbered}`;
+  const first = staged[0];
   const context = {
     page: location.pathname,
     ...pageCtx,
-    ...(chatCtx.value ? { decisionId: chatCtx.value, title: chosen?.dataset.title ?? '' } : {}),
+    ...(staged.length === 1 && first.quote ? { quote: first.quote, section: first.section } : {}),
+    ...(staged.length === 1 && first.shot ? { attachment: first.shot } : {}),
+  };
+  const res = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body, context }),
+  }).catch(() => null);
+  if (!res?.ok) {
+    chatSt.textContent = 'failed — daemon up?';
+    chatSt.className = 'st warn';
+    return false;
+  }
+  const out = await res.json().catch(() => ({}));
+  // Same honesty as a single message: never claim delivery that did not happen.
+  if (out.parked) {
+    chatSt.textContent = `⏳ parked — no ${out.project ?? 'matching'} session`;
+    chatSt.className = 'st warn';
+  } else if (out.queued) {
+    chatSt.textContent = '⏳ queued — agent busy';
+    chatSt.className = 'st';
+  } else {
+    chatSt.textContent = '✓ sent'; chatSt.className = 'st ok';
+  }
+  return true;
+}
+
+async function submitReview(kind) {
+  if (!staged.length) return;
+  const id = reviewTarget();
+  if (!id) {
+    chatSt.textContent = 'sending…'; chatSt.className = 'st';
+    if (!(await sendStagedAsMessage())) return;
+    staged = [];
+    saveStaged();
+    renderReview();
+    setTimeout(() => { chatSt.textContent = ''; }, 4000);
+    return;
+  }
+  chatSt.textContent = 'submitting…'; chatSt.className = 'st';
+  // The reason is what shows on the verdict, so it must say something. The
+  // first comment is the most informative thing available.
+  const reason =
+    staged.length === 1
+      ? staged[0].body.slice(0, 120)
+      : `${staged[0].body.slice(0, 90)} (+${staged.length - 1} more)`;
+  const res = await api(`/decisions/${id}/comments`, {
+    method: 'POST',
+    body: {
+      // A comment row has no attachment column, so a screenshot rides in the
+      // body as a path the agent can Read — the same handoff the channel uses.
+      comments: staged.map((s) => ({
+        body: s.shot ? `${s.body}\n\nscreenshot: ${s.shot}` : s.body,
+        anchor_quote: s.quote,
+      })),
+      request_changes: kind === 'changes',
+      reason,
+    },
+  });
+  if (res.status !== 200) {
+    chatSt.textContent = res.body?.detail ?? 'could not submit';
+    chatSt.className = 'st warn';
+    return;
+  }
+  // Approve is a separate transition: the comments are the reasoning, the
+  // verdict is the ruling, and only the second one moves the decision.
+  if (kind === 'approve') {
+    const v = await api(`/decisions/${id}/verdict`, { method: 'POST', body: { to: 'approved' } });
+    if (v.status !== 200) {
+      chatSt.textContent = 'comments saved, approve failed';
+      chatSt.className = 'st warn';
+    }
+  }
+  staged = [];
+  saveStaged();
+  renderReview();
+  chatSt.textContent = '✓ review sent'; chatSt.className = 'st ok';
+  setTimeout(() => { chatSt.textContent = ''; }, 4000);
+  renderDecision(id);
+}
+
+function setReviewing(on) {
+  reviewing = on;
+  revBox.hidden = !reviewing;
+  revBtn.classList.toggle('on', reviewing);
+  chatSend.textContent = reviewing ? 'Add' : 'Send';
+  chatIn.placeholder = reviewing
+    ? reviewTarget()
+      ? 'Comment on this doc — held until you submit the review…'
+      : 'Note for the agent — held until you send them together…'
+    : 'Select text in the doc, or paste a screenshot — then tell the agent…';
+  if (reviewing) renderReview();
+}
+
+// Called on every route change. `render()` reaches this through a typeof guard
+// because it is defined earlier in the file than these bindings.
+let reviewingFor = null;
+function syncReviewToPage() {
+  const key = revKey();
+  if (key === reviewingFor) return;
+  reviewingFor = key;
+  loadStaged();
+  // A page you left mid-review reopens in review mode: notes held about one
+  // page mean nothing on another, and silently hiding them loses the work.
+  setReviewing(staged.length > 0);
+  revBtn.textContent = staged.length ? `review (${staged.length})` : 'review';
+}
+
+revBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!reviewing) loadStaged();
+  setReviewing(!reviewing);
+});
+
+async function sendChat() {
+  if (reviewing) { stageComment(); return; }
+  const body = chatIn.value.trim();
+  if (!body) return;
+  chatSt.textContent = 'sending…'; chatSt.className = 'st';
+  // No "which decision" picker any more: on a doc page pageCtx already carries
+  // decisionId and title (the picker only ever restated what the page knew), and
+  // from the library you say which doc by opening it.
+  const context = {
+    page: location.pathname,
+    ...pageCtx,
     ...(pickedQuote ? { quote: pickedQuote.text, section: pickedQuote.section } : {}),
     ...(pickedShot ? { attachment: pickedShot.path } : {}),
   };
@@ -803,10 +1230,15 @@ async function sendChat() {
   } else { chatSt.textContent = 'failed — daemon up?'; }
   setTimeout(() => { chatSt.textContent = ''; }, 4000);
 }
-document.getElementById('chat-send').addEventListener('click', sendChat);
+chatSend.addEventListener('click', sendChat);
 chatIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
-loadCtxPicker();
-new EventSource('/api/events').addEventListener('message', loadCtxPicker);
+// Keep an open history panel live: a message flipping from parked to delivered,
+// or an agent's reply landing, is exactly what you opened it to watch.
+new EventSource('/api/events').addEventListener('message', () => {
+  // reset, not append: a new message lands at the top, so re-render the pages
+  // already loaded rather than paging further into a list that just shifted.
+  if (!histBox.hidden) loadHistory({ reset: true });
+});
 
 render();
 </script>

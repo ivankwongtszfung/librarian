@@ -454,6 +454,18 @@ export function createApp(opts: HttpOptions): express.Express {
     res.json({ waiting: opts.messages.pendingByProject() });
   });
 
+  // What you said and what came back. Delivery is recorded fact; the reaction is
+  // a correlation the store labels honestly (see repository.messageHistory).
+  app.get('/api/messages/history', (req: Request, res: Response) => {
+    const asked = Number.parseInt(String(req.query.limit ?? ''), 10);
+    const limit = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), 200) : 50;
+    const from = Number.parseInt(String(req.query.offset ?? ''), 10);
+    const offset = Number.isFinite(from) && from > 0 ? from : 0;
+    const messages = opts.repo.messageHistory(limit, offset);
+    // `more` saves the client a wasted round trip to discover the end.
+    res.json({ messages, offset, more: messages.length === limit });
+  });
+
   // ---------- SSE ----------
   app.get('/api/events', (req: Request, res: Response) => {
     res.writeHead(200, {
@@ -473,10 +485,17 @@ export function createApp(opts: HttpOptions): express.Express {
       req.header('x-librarian-session') ?? (declared.length ? `ses_anon_${randomId()}` : null);
 
     const onEvent = (event: LibrarianEvent) => {
-      // A session only ever receives messages for a project it is bound to, or
+      // A session only ever receives events for a project it is bound to, or
       // global (unprojected) ones. The binding is looked up LIVE (ADR-016) so a
       // rebind takes effect at once — capturing it here would freeze it forever.
-      if (event.type === 'message' && event.projectName) {
+      //
+      // This filters on the PROJECT, not the event type. It once applied only
+      // to 'message', which meant every verdict, comment and new decision on
+      // the machine was announced to every connected agent — an agent working
+      // on one project was told how another project's ADRs had been ruled on.
+      // Anything carrying a project is routed by it; anything without one is
+      // genuinely global and still goes everywhere.
+      if (event.projectName) {
         const bound = opts.channels.projectsOf(sessionKey);
         if (bound.length && !bound.includes(event.projectName)) return;
       }
