@@ -42,7 +42,10 @@ export function assertTransition(
       'invalid_transition',
     );
   }
-  if ((to === 'rejected' || to === 'changes_requested') && !reason?.trim()) {
+  // A supersession must name what replaced it, for the same reason a rejection
+  // must say why: a record whose successor is unnamed is a dead end for the
+  // next reader, and unresolvable once memory of the reconciliation is gone.
+  if ((to === 'rejected' || to === 'changes_requested' || to === 'superseded') && !reason?.trim()) {
     throw new VerdictError(`a '${to}' verdict must carry a reason`, 'reason_required');
   }
 }
