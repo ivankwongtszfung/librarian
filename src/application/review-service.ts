@@ -36,6 +36,15 @@ export class ReviewService {
     private readonly baseUrl = 'http://127.0.0.1:7801',
   ) {}
 
+  /**
+   * The project a decision belongs to — read from the store, never taken from
+   * the caller. Routing authority has to come from the record: a client that
+   * could name the project could address another project's sessions.
+   */
+  private projectOf(decisionId: string): string | undefined {
+    return this.repo.getDecisionDetail(decisionId)?.projectName ?? undefined;
+  }
+
   async submitForReview(
     input: SubmitForReviewInput,
   ): Promise<{ reviewId: string; version: number; deduped: boolean }> {
@@ -188,6 +197,11 @@ export class ReviewService {
     this.bus.emitEvent({
       type: 'verdict',
       decisionId: input.decisionId,
+      // Routing needs the owning project on the event itself (ADR-013).
+      // Without it every connected session is told about every verdict on the
+      // machine, which is how another project's agent learned that ADR-015,
+      // ADR-017 and ADR-018 had been ruled on.
+      projectName: this.projectOf(input.decisionId),
       status: event.toState,
       at: event.at,
     });
@@ -237,6 +251,7 @@ export class ReviewService {
     this.bus.emitEvent({
       type: 'comment',
       decisionId: input.decisionId,
+      projectName: this.projectOf(input.decisionId),
       at: Date.now(),
     });
 

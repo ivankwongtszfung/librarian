@@ -485,10 +485,17 @@ export function createApp(opts: HttpOptions): express.Express {
       req.header('x-librarian-session') ?? (declared.length ? `ses_anon_${randomId()}` : null);
 
     const onEvent = (event: LibrarianEvent) => {
-      // A session only ever receives messages for a project it is bound to, or
+      // A session only ever receives events for a project it is bound to, or
       // global (unprojected) ones. The binding is looked up LIVE (ADR-016) so a
       // rebind takes effect at once — capturing it here would freeze it forever.
-      if (event.type === 'message' && event.projectName) {
+      //
+      // This filters on the PROJECT, not the event type. It once applied only
+      // to 'message', which meant every verdict, comment and new decision on
+      // the machine was announced to every connected agent — an agent working
+      // on one project was told how another project's ADRs had been ruled on.
+      // Anything carrying a project is routed by it; anything without one is
+      // genuinely global and still goes everywhere.
+      if (event.projectName) {
         const bound = opts.channels.projectsOf(sessionKey);
         if (bound.length && !bound.includes(event.projectName)) return;
       }
