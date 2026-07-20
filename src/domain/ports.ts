@@ -71,6 +71,12 @@ export interface DecisionStore {
   undeliveredMessages(): QueuedMessage[];
   markMessagesDelivered(ids: string[]): void;
   messageHistory(limit?: number, offset?: number): MessageHistoryItem[];
+  /** The agent's answer to a message. Throws if the message is unknown. */
+  replyToMessage(
+    messageId: string,
+    body: string,
+    opts: { refs?: string[]; agent?: string },
+  ): MessageReply;
 }
 
 export interface QueuedMessage {
@@ -82,22 +88,23 @@ export interface QueuedMessage {
 }
 
 /**
- * What the agent did after a message reached it — or, honestly, whether we can
- * tell at all. Delivery is a fact the daemon owns; a *reaction* is an inference,
- * and only a message that named a decision can be correlated to one.
+ * The agent's answer to a specific message (ADR-019).
+ *
+ * This replaced a correlation that guessed from timing whether an answer had
+ * happened. A stored reply is a fact; there is nothing left to infer, so the
+ * only two states are "answered" and "not answered yet".
  */
-export type MessageReaction =
-  // Strong: the message named a decision, and the agent then answered on it.
-  | { kind: 'comment'; at: number; decisionId: string; ref: string; excerpt: string }
-  | { kind: 'version'; at: number; decisionId: string; ref: string; num: number }
-  // Weak: the message named only a project, and the agent then did something in
-  // it. Correlation by time alone — the UI must not phrase this as a reply.
-  | { kind: 'activity'; at: number; decisionId: string; title: string; num: number }
-  | { kind: 'none' }
-  | { kind: 'untracked' };
+export interface MessageReply {
+  id: string;
+  body: string;
+  /** Commits, PRs, files — evidence, so "fixed it" is checkable. */
+  refs: string[];
+  author: string;
+  createdAt: number;
+}
 
 export interface MessageHistoryItem extends QueuedMessage {
-  reaction: MessageReaction;
+  reply: MessageReply | null;
 }
 
 /** Push-notification sink — the daemon's outbound alert channel (ntfy today). */

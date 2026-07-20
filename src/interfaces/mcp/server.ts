@@ -176,6 +176,47 @@ export function createMcpServer(repo: DecisionStore, reviews: ReviewService): Mc
   );
 
   server.registerTool(
+    'reply_to_message',
+    {
+      title: 'Answer a message the human typed into the review UI',
+      description:
+        'Answer a chat-bar message so the human reads it on the page instead of in your terminal. ' +
+        'CALL THIS whenever you have acted on, or answered, a message that arrived from the review UI — ' +
+        'otherwise the page shows it as unanswered and the human has to go hunting for what you did. ' +
+        'Post the CONCLUSION, not your reasoning: what changed, and the evidence in `refs` ' +
+        '(commit SHAs, PR numbers, file paths). ' +
+        'If the answer is a document, use submit_for_review; if it belongs to a decision, use ' +
+        'comment_on_decision. This tool is for "you asked, here is what happened".',
+      inputSchema: {
+        message_id: z.string().describe('The id of the message being answered'),
+        body: z
+          .string()
+          .describe('The answer itself — a conclusion, not a transcript of your thinking'),
+        refs: z
+          .array(z.string())
+          .optional()
+          .describe('Evidence: commit SHAs, PR numbers, file paths — so "fixed it" is checkable'),
+        agent: z.string().optional().describe('Your agent name, e.g. "claude-code"'),
+      },
+    },
+    async (args) => {
+      try {
+        const reply = repo.replyToMessage(args.message_id, args.body, {
+          refs: args.refs,
+          agent: args.agent,
+        });
+        return text({
+          ok: true,
+          reply_id: reply.id,
+          note: 'Stored. The human sees it under their message in the review UI.',
+        });
+      } catch {
+        return text({ error: 'no_such_message', message_id: args.message_id });
+      }
+    },
+  );
+
+  server.registerTool(
     'record_decision',
     {
       title: 'Record a decision (no gate)',

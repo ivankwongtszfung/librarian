@@ -55,8 +55,11 @@ describe('MessageService', () => {
     const events = messageEvents();
     expect(events).toHaveLength(1);
     expect(events[0].context?.batch).toBe('2');
-    expect(events[0].body).toContain('[1/2 · /] first thought');
-    expect(events[0].body).toContain('[2/2 · /d/dec_1 · "ADR-X"] second thought');
+    // Each line carries its own id so the agent can answer them separately
+    // (ADR-019); the id is generated, so match around it.
+    expect(events[0].body).toMatch(/\[1\/2 · \/ · id=msg_\w+\] first thought/);
+    expect(events[0].body).toMatch(/\[2\/2 · \/d\/dec_1 · "ADR-X" · id=msg_\w+\] second thought/);
+    expect(events[0].messageIds).toHaveLength(2);
     expect(repo.undeliveredMessages()).toHaveLength(0);
 
     // A second idle report must not re-deliver.
@@ -133,8 +136,8 @@ describe('MessageService', () => {
     expect(events[0].projectName).toBe('acct');
     expect(events[0].context?.batch).toBe('2');
     expect(events[0].context?.project).toBe('acct');
-    expect(events[0].body).toContain('[1/2 · /p/acct] first');
-    expect(events[0].body).toContain('[2/2 · /p/acct] second');
+    expect(events[0].body).toMatch(/\[1\/2 · \/p\/acct · id=msg_\w+\] first/);
+    expect(events[0].body).toMatch(/\[2\/2 · \/p\/acct · id=msg_\w+\] second/);
   });
 
   it('a targeted message never reaches another project', () => {
